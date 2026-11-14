@@ -113,8 +113,3 @@ export function attachPointerInput(canvas: HTMLCanvasElement, host: PointerHost)
     canvas.removeEventListener('wheel', onWheel);
   };
 }
-
-/** True while a pointer gesture is active (used to keep hand input exclusive). */
-export function pointerBusy(canvas: HTMLCanvasElement): boolean {
-  return canvas.dataset.pointerActive === 'true';
-}

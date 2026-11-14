@@ -252,7 +252,11 @@ export function createApp(root: HTMLElement): AppHandle {
     metrics: sink,
     now: () => performance.now(),
     onUpdate: () => {
-      renderer.setOverlay({ cursors: hands.cursors(), prediction: null });
+      // Display-wait estimate: half a 60 Hz frame (no reliable measurement available).
+      const prediction = hands.prediction(performance.now(), 8);
+      // The drawing cursor sits on the displayed (predicted) tip so cursor and ink agree.
+      const cursors = hands.cursors().map((c) => (prediction !== null && c.mode === 'draw' ? { ...c, x: c.x + prediction.dx, y: c.y + prediction.dy } : c));
+      renderer.setOverlay({ cursors, prediction });
       refreshHandFeedback();
       refreshMode();
       applyPendingConfig();

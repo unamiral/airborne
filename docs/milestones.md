@@ -204,3 +204,54 @@ practice, PNG export, accessibility pass.
 ### Next step
 M5: debug recording, privacy/storage/offline checks, resource cycles and soak,
 deployment headers, demo replay, README and requirement-to-test map.
+
+## M5 — Release validation (branch `m5-release-validation`)
+
+### Completed
+- Development-only landmark recorder (no video): visible indicator, duration
+  and size limits, stop, discard, export; exports validate and replay.
+- Production checks: no developer tooling or source maps in the bundle;
+  same-origin GET-only traffic, no websockets, no storage/cookies/caches/service
+  workers after a full session; tracking continues offline after load;
+  deployment `_headers` generated from the same header definitions as preview.
+- Resource checks: 20 browser start/stop cycles and a 15-minute soak.
+- Automated demo replay (write, recolor by hand, two-hand zoom, fist erase,
+  undo by hand, export).
+- Prediction wired into rendering behind the flag (`?prediction=1` in dev
+  builds); the drawing cursor follows the predicted tip; still off by default.
+- README, architecture overview, ADR 0006 (fallbacks), requirement-to-test
+  map, performance report.
+
+### Bug found and fixed
+- Hand hit regions were computed once at startup, so a control that became
+  enabled later (Undo after the first stroke) could not be pressed by hand.
+  The layout now follows `hidden`/`disabled`/`open` changes and activation
+  re-checks the target; covered by a focused regression test.
+
+### Checks run
+- `npm run typecheck`, `npm run lint`: clean.
+- Vitest: 233 tests in 28 files.
+- Playwright: 56 tests (production build under `/air-whiteboard/` with
+  deployment headers, and the bench build), including camera switching with
+  two fake devices, hand-target size/reachability, recording, privacy,
+  offline, start/stop cycles, and the automated demo.
+- Benchmarks on the GPU path: 15-minute soak, 3 × 60 s software pipeline,
+  startup (warm, cached, cold 25 Mbps). Details in docs/performance.md.
+
+### Measurements (Apple M2, Chromium 159 new-headless)
+- Soak: inference p95 32–36 ms per minute with no drift over 15 minutes; JS
+  heap 5.9–7.3 MiB with no growth trend.
+- Pipeline: 30.0 results/s; input math + reducer p95 0.1 ms; observation →
+  draw submission p95 50.3 ms (target 40 ms: **fail**, driven by inference);
+  99.98% of display frames within 20 ms (headless); one unexplained 67 ms
+  long task in 180 s (target none > 50 ms: **fail**).
+- Startup: ready 0.52 s after permission with cached assets, 7.1 s cold at
+  25 Mbps; shell interactive in under 15 ms on warm navigation.
+
+### Failures and unmeasured
+- Recorded real-camera fixture corpus (consented, tuning/held-out split): none.
+- Physical latency, user trials, five live demos, designated demo laptops,
+  Edge/Windows: not measured.
+- No automatic quality adaptation (skeleton/raster/inference-rate reduction
+  under load) is implemented; the raster scale is bounded by the memory
+  budget only.

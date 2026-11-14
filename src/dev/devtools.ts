@@ -186,6 +186,8 @@ export function installDevtools(app: AppHandle): void {
   });
   window.__air = handle;
   if (params.get('recorder') !== '0') document.body.append(recorder.element);
+  // Prediction is an experiment behind a flag (plan §8.6): dev builds only.
+  if (params.get('prediction') === '1') app.applyConfig({ prediction: { enabled: true } });
 
   if (params.get('hud') === '0') return;
   const hud = el('div', { class: 'hud', 'aria-hidden': 'true' });

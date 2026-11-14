@@ -11,11 +11,11 @@ import { regionFromLayout } from '../../src/tracking/hand-pipeline';
 import { POSES, handAt } from '../support/hands';
 import { CAMERA, SURFACE, surfaceToCamera } from '../support/scenarios';
 
-function setup() {
-  const controller = new BoardController(DEFAULT_CONFIG);
+function setup(config = DEFAULT_CONFIG) {
+  const controller = new BoardController(config);
   let now = 0;
   const hands = new HandInput({
-    config: () => DEFAULT_CONFIG,
+    config: () => config,
     controller: () => controller,
     activateControl: () => undefined,
     metrics: new Metrics(),
@@ -32,7 +32,7 @@ function setup() {
     const cam = surfaceToCamera(x, y);
     hands.handleResult(t, [handAt(pose, { penU: cam.u, penV: cam.v, seed: t })], t);
   };
-  return { hands, controller, feed, setNow: (n: number) => (now = n), time: () => t };
+  return { hands, controller, feed, setNow: (n: number) => (now = n), time: () => t, now: () => now };
 }
 
 describe('hover cursor (F08)', () => {
@@ -84,5 +84,27 @@ describe('hover cursor (F08)', () => {
     s.setNow(s.time() + 400);
     s.hands.handleResult(s.time() + 33, [handAt(POSES.pinch(0.1), { penU: 0.5, penV: 0.5 })], s.time() + 250);
     expect(s.hands.label).toBe('Tracking lost');
+  });
+
+  it('offers a bounded visual prediction only while drawing, only when enabled', () => {
+    const off = setup();
+    for (let i = 0; i < 4; i++) off.feed();
+    for (let i = 0; i < 8; i++) off.feed(POSES.pinch(0.1), 600 + i * 10);
+    expect(off.hands.prediction(off.now(), 8)).toBeNull();
+    const config = { ...DEFAULT_CONFIG, prediction: { ...DEFAULT_CONFIG.prediction, enabled: true } };
+    const on = setup(config);
+    for (let i = 0; i < 4; i++) on.feed();
+    for (let i = 0; i < 8; i++) on.feed(POSES.pinch(0.1), 600 + i * 10);
+    const p = on.hands.prediction(on.now(), 8);
+    expect(p).not.toBeNull();
+    expect(Math.hypot(p!.dx, p!.dy)).toBeLessThanOrEqual(config.prediction.maxDistancePx + 1e-9);
+    expect(p!.dx).toBeGreaterThan(0);
+    on.feed(POSES.open, 690);
+    expect(on.hands.prediction(on.now(), 8)).toBeNull();
+    // Predicted tips never become stroke points.
+    const stroke = on.controller.doc.strokes[0]!;
+    let maxX = -Infinity;
+    stroke.points.forEach((x) => (maxX = Math.max(maxX, x)));
+    expect(maxX + SURFACE.stripWidth).toBeLessThanOrEqual(600 + 7 * 10 + 1);
   });
 });

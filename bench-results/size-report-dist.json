@@ -1,5 +1,5 @@
 {
- "date": "2026-11-14T17:25:40.896Z",
+ "date": "2026-11-14T18:44:28.855Z",
  "rows": [
   {
    "file": "assets/mediapipe/1.2.3/vision_wasm_module_internal.wasm",
@@ -30,33 +30,40 @@
    "brotli": 39314
   },
   {
-   "file": "assets/index-Co1Kjfvo.js",
+   "file": "assets/index-DdzuwZk4.js",
    "category": "shell",
-   "bytes": 30946,
-   "gzip": 10745,
-   "brotli": 9641
+   "bytes": 111423,
+   "gzip": 36403,
+   "brotli": 32015
   },
   {
-   "file": "assets/index-BTFM_s8m.css",
+   "file": "assets/index-7xXp4omn.css",
    "category": "shell",
-   "bytes": 4458,
-   "gzip": 1671,
-   "brotli": 1422
+   "bytes": 7151,
+   "gzip": 2277,
+   "brotli": 1970
+  },
+  {
+   "file": "_headers",
+   "category": "shell",
+   "bytes": 777,
+   "gzip": 427,
+   "brotli": 348
   },
   {
    "file": "index.html",
    "category": "shell",
    "bytes": 677,
-   "gzip": 387,
+   "gzip": 388,
    "brotli": 243
   }
  ],
  "summary": {
-  "shellGzipKiB": 12.5,
-  "shellBrotliKiB": 11,
+  "shellGzipKiB": 38.6,
+  "shellBrotliKiB": 33.8,
   "mlGzipMiB": 9.62,
   "mlBrotliMiB": 7.98,
-  "coldCameraGzipMiB": 9.64,
-  "coldCameraBrotliMiB": 7.99
+  "coldCameraGzipMiB": 9.66,
+  "coldCameraBrotliMiB": 8.01
  }
 }

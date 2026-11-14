@@ -1,0 +1,77 @@
+{
+ "environment": {
+  "date": "2026-11-14T18:40:34.351Z",
+  "cpu": "Apple M2",
+  "cores": 8,
+  "memoryGiB": 8,
+  "os": "darwin 27.2.0",
+  "browser": "Chromium 159.0.8154.6",
+  "mode": "new headless (channel=chromium), Playwright-controlled",
+  "gpuRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+  "viewport": "1280x800",
+  "devicePixelRatio": 1,
+  "camera": "Chromium fake device playing tests/.cache/fake-camera.mjpeg (640x480, 30 fps, MediaPipe test photos)",
+  "powerMode": "not controlled (development laptop, unknown power source/thermal state)",
+  "displayRefresh": "headless: no physical display"
+ },
+ "shellInteractiveMs": [
+  13.900000002235174,
+  9.5,
+  7.699999999254942,
+  7.399999998509884,
+  7.5
+ ],
+ "warmFirst": {
+  "permissionToReadyMs": 839.1999999992549,
+  "readyToFirstResultMs": 60.900000002235174,
+  "timings": {
+   "modelFetchMs": 328.1000000014901,
+   "modelVerifyMs": 32.399999998509884,
+   "createMs": 245.70000000298023,
+   "warmupMs": [
+    258.19999999925494,
+    9.200000002980232,
+    10.399999998509884,
+    10.199999999254942,
+    8.900000002235174
+   ]
+  },
+  "backend": "GPU"
+ },
+ "cached": {
+  "permissionToReadyMs": 516.3000000007451,
+  "readyToFirstResultMs": 49.100000001490116,
+  "timings": {
+   "modelFetchMs": 30,
+   "modelVerifyMs": 21.300000000745058,
+   "createMs": 215.40000000223517,
+   "warmupMs": [
+    213.5,
+    9.399999998509884,
+    10.199999999254942,
+    9.5,
+    8.800000000745058
+   ]
+  },
+  "backend": "GPU"
+ },
+ "cold25Mbps": {
+  "permissionToReadyMs": 7110.599999997765,
+  "readyToFirstResultMs": 100.60000000149012,
+  "timings": {
+   "modelFetchMs": 1895.6000000014901,
+   "modelVerifyMs": 25.600000001490116,
+   "createMs": 4914.89999999851,
+   "warmupMs": [
+    211.5,
+    12.300000000745058,
+    13.099999997764826,
+    10.900000002235174,
+    12.899999998509884
+   ]
+  },
+  "backend": "GPU",
+  "transferredBytes": 91922,
+  "note": "vite preview serves uncompressed files"
+ }
+}
