@@ -150,6 +150,54 @@ describe('camera session lifecycle', () => {
     expect(s.results()).toBe(2);
   });
 
+  it('falls back to CPU after repeated frame failures and resumes results', async () => {
+    const s = setup();
+    await s.session.start();
+    s.workers[0]!.throwOnPost = true;
+    for (let i = 1; i <= 3; i++) {
+      s.video.emitFrame(i * 0.033);
+      await flush(10);
+    }
+    expect(s.workers[0]!.terminated).toBe(true);
+    expect(s.session.details.backend).toBe('CPU');
+    s.video.emitFrame(0.132);
+    await flush(10);
+    expect(s.session.state.kind).toBe('ready');
+    expect(s.results()).toBe(1);
+    s.session.stop();
+  });
+
+  it('resets the consecutive failure count after a successful frame', async () => {
+    const s = setup();
+    await s.session.start();
+    for (let i = 1; i <= 6; i++) {
+      s.workers[0]!.throwOnPost = i % 3 !== 0;
+      s.video.emitFrame(i * 0.033);
+      await flush(10);
+    }
+    expect(s.workers).toHaveLength(1);
+    expect(s.results()).toBe(2);
+    expect(s.session.state.kind).toBe('ready');
+    s.session.stop();
+  });
+
+  it('bounds persistent frame failures and releases the camera', async () => {
+    const s = setup();
+    await s.session.start();
+    for (let i = 1; i <= 9; i++) {
+      s.workers.at(-1)!.throwOnPost = true;
+      s.video.emitFrame(i * 0.033);
+      await flush(10);
+    }
+    expect(s.session.state.kind).toBe('failed');
+    expect(s.workers).toHaveLength(3);
+    expect(liveWorkers(s.workers)).toBe(0);
+    expect(s.media.liveTracks).toBe(0);
+    await s.session.start();
+    expect(s.session.details.backend).toBe('GPU');
+    s.session.stop();
+  });
+
   it('recovers from a crashed worker a bounded number of times', async () => {
     const s = setup();
     await s.session.start();

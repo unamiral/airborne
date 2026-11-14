@@ -48,7 +48,7 @@ every file against the SHA-256 values in `assets.manifest.json`.
 npm run typecheck          # strict TypeScript (app, worker, tests/scripts)
 npm run lint               # ESLint with type-aware rules
 npm test                   # Vitest: unit + integration (Node)
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:e2e           # builds dist/ and dist-bench/, then Playwright
 npm run check              # all of the above
 ```
@@ -146,7 +146,7 @@ An automated version of this script runs in `tests/e2e/bench/release.spec.ts`.
   (ADR 0003). Prediction is implemented but disabled.
 - The camera→board mapping keeps the surface aspect ratio instead of
   stretching the central 70% of both axes (ADR 0004).
-- A thumbs-up counts as a fist for erasing (four-finger definition).
+- Fist recognition is based on limited hand-pose fixtures; test it with a real camera and varied hands, angles, and lighting.
 - No real-camera recordings, user trials, physical latency, thermal or
   second-laptop measurements; Edge and Windows untested.
 - Strokes are erased whole; no selection, text, shapes, saving, or multi-user.

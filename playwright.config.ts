@@ -40,7 +40,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'prod', testIgnore: /bench\//, use: { baseURL: PROD_URL } },
-    { name: 'bench', testMatch: /bench\/.*\.spec\.ts/, use: { baseURL: BENCH_URL } },
+    { name: 'bench', testMatch: /bench\/.*\.spec\.ts/, testIgnore: /webkit-camera/, use: { baseURL: BENCH_URL } },
+    {
+      name: 'webkit',
+      testMatch: /webkit-camera\.spec\.ts/,
+      use: { browserName: 'webkit', baseURL: BENCH_URL, launchOptions: { args: [] } },
+    },
   ],
   webServer: [
     {

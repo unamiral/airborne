@@ -144,7 +144,12 @@ export function extractFeatures(
   const palmScaleM = norm(sub(at(world, LM.MIDDLE_MCP), at(world, LM.WRIST)));
   const pinchRatio = palmScaleM > 0 ? norm(sub(at(world, LM.THUMB_TIP), at(world, LM.INDEX_TIP))) / palmScaleM : Number.POSITIVE_INFINITY;
   const fingers = fingerCurls(world, palmScaleM, config);
-  const fist = fingers.every((f) => f.curled);
+  // A raised thumb with four curled fingers is a thumbs-up, not an erase
+  // gesture. Measure in world space so the check is rotation invariant.
+  const thumbToMiddle = palmScaleM > 0
+    ? norm(sub(at(world, LM.THUMB_TIP), at(world, LM.MIDDLE_MCP))) / palmScaleM
+    : Number.POSITIVE_INFINITY;
+  const fist = fingers.every((f) => f.curled) && thumbToMiddle <= 0.75;
   const index = fingers[0]!;
   const pinchPose = !index.curled && index.tipPalmRatio >= config.pinchIndexReachRatio;
 
