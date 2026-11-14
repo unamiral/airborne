@@ -129,7 +129,8 @@ export function installDevtools(app: AppHandle): void {
         return ctx.getImageData(0, 0, w, h).data;
       };
       const visible = read((ctx) => ctx.drawImage(canvas, 0, 0));
-      const reference = read((ctx) => renderStrokes(ctx, app.controller.doc.strokes, app.controller.view, rasterScale, cssWidth, cssHeight));
+      const board = app.activeBoard();
+      const reference = read((ctx) => renderStrokes(ctx, board.doc.strokes, board.view, rasterScale, cssWidth, cssHeight));
       let ink = 0;
       let mismatched = 0;
       let maxDiff = 0;

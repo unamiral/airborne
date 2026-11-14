@@ -177,9 +177,12 @@ export class BoardRenderer {
     };
   }
 
+  private detach: (() => void) | null = null;
+
   attach(board: BoardController): void {
+    this.detach?.();
     this.board = board;
-    board.onChange((kind) => {
+    this.detach = board.onChange((kind) => {
       if (kind === 'doc' || kind === 'view' || kind === 'active') this.invalidate();
     });
     this.resetCache();

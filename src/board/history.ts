@@ -73,6 +73,11 @@ export class History {
     return this.bytes;
   }
 
+  /** Most recent undoable action (for observers such as the practice tracker). */
+  get lastCommand(): Command | null {
+    return this.undoStack[this.undoStack.length - 1] ?? null;
+  }
+
   setLimits(limits: HistoryLimits): void {
     this.limits = limits;
     this.enforce();
