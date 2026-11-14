@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-*/
+coverage/
+
+# Generated runtime assets (copied/downloaded and checksum-verified by scripts/assets.mjs)
+public/assets/mediapipe/
+public/assets/models/
+
+# Test and benchmark artifacts
+test-results/
+playwright-report/
+blob-report/
+tests/.cache/
+bench-results/raw/
+
+# Local recordings (may contain landmark data; never commit without consent)
+recordings/
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
