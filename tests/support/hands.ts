@@ -24,7 +24,7 @@ export interface Pose {
   readonly ring: Curl;
   readonly pinky: Curl;
   /** 'open' thumb, 'fist' thumb across the fingers, or a gap to the index or middle fingertip, in palm lengths. */
-  readonly thumb: 'open' | 'fist' | 'aligned' | { readonly pinchRatio: number } | { readonly writingRatio: number };
+  readonly thumb: 'open' | 'fist' | 'aligned' | 'frame' | { readonly pinchRatio: number } | { readonly writingRatio: number };
   /** Degrees. */
   readonly roll?: number;
   readonly pitch?: number;
@@ -46,6 +46,7 @@ export const POSES = {
   tightPinch: (ratio = 0.12): Pose => ({ index: pinchIndex, middle: curled, ring: curled, pinky: curled, thumb: { pinchRatio: ratio } }),
   fist: { index: curled, middle: curled, ring: curled, pinky: curled, thumb: 'fist' } as Pose,
   halfCurl: { index: half, middle: half, ring: half, pinky: half, thumb: 'open' } as Pose,
+  frame: { index: straight, middle: curled, ring: curled, pinky: curled, thumb: 'frame' } as Pose,
   pointing: { index: straight, middle: curled, ring: curled, pinky: curled, thumb: 'fist' } as Pose,
   writing: (ratio = 0.24): Pose => ({ index: straight, middle: half, ring: relaxed, pinky: relaxed, thumb: { writingRatio: ratio } }),
 } as const;
@@ -120,6 +121,8 @@ export function worldPose(pose: Pose): V3[] {
     tip = [-0.075, -0.08, -0.02];
   } else if (pose.thumb === 'aligned') {
     tip = add(mcp, [-0.005, -0.073, 0]);
+  } else if (pose.thumb === 'frame') {
+    tip = add(mcp, [-0.068, 0.002, 0]);
   } else if (pose.thumb === 'fist') {
     tip = [-0.004, -0.072, -0.042];
   } else {

@@ -11,6 +11,7 @@ export interface IntentSinks {
   readonly controller: BoardController;
   /** Board rectangle within the interaction surface. */
   readonly boardRect: Rect;
+  readonly saveSnapshot?: () => void;
   readonly activateControl: (id: string) => void;
 }
 
@@ -60,6 +61,9 @@ export function applyIntents(intents: readonly Intent[], sinks: IntentSinks): vo
         break;
       case 'erase-end':
         c.endErase();
+        break;
+      case 'snapshot':
+        sinks.saveSnapshot?.();
         break;
       case 'control-activate':
         sinks.activateControl(intent.id);

@@ -395,6 +395,23 @@ input:focus-visible,
   background: var(--board-bg);
 }
 
+.snapshot-feedback {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: 24px;
+  transform: translateX(-50%);
+  z-index: 1;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--button-border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .board[data-tool='move'],
 .board[data-panning='true'] {
   cursor: grab;

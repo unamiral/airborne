@@ -9,7 +9,7 @@ import type { Stroke } from '../../src/board/stroke';
 import { parseReplay, type ReplayRecord } from '../../src/dev/replay-format';
 import { runReplay } from '../../src/dev/replay-runner';
 import { POSES, withRotation } from '../support/hands';
-import { hover, move, writeAt, writeMove, scenario, still, type HandScript } from '../support/scenarios';
+import { clapScenario, frameSnapshotScenario, extendMove, handsAtRest, hover, move, writeAt, writeMove, scenario, still, type HandScript } from '../support/scenarios';
 
 /** Board-local CSS px of a stroke point (identity view; board starts after the 120 px strip). */
 function points(stroke: Stroke): Array<{ x: number; y: number }> {
@@ -126,28 +126,29 @@ describe('dots, punctuation, and release (F10)', () => {
 
 describe('two hands (F14, F15)', () => {
   const twoHands = (secondStart: number, firstMove: number): HandScript[] => [
-    { phases: [hover(300, 500, 360), writeMove(secondStart, 500, 360, 500 + firstMove, 360), writeMove(600, 500 + firstMove, 360, 420, 360), hover(300, 420, 360)] },
-    { phases: [hover(300 + secondStart, 800, 360), writeMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
+    { phases: [hover(300, 500, 360), writeMove(secondStart, 500, 360, 500 + firstMove, 360), extendMove(600, 500 + firstMove, 360, 420, 360), handsAtRest(300, 420, 360)] },
+    { phases: [handsAtRest(300 + secondStart, 800, 360), extendMove(600, 800, 360, 880, 360), handsAtRest(300, 880, 360)], handedness: 'Left' },
   ];
 
-  it('zooms with both hands and leaves no phantom stroke', () => {
+  it('zooms out with both hands and leaves no phantom stroke', () => {
     const r = run(
       scenario('zoom', [
-        { phases: [hover(300, 500, 360), writeMove(600, 500, 360, 420, 360), hover(300, 420, 360)] },
-        { phases: [hover(300, 800, 360), writeMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
+        { phases: [handsAtRest(300, 500, 360), extendMove(600, 500, 360, 420, 360), handsAtRest(300, 420, 360)] },
+        { phases: [handsAtRest(300, 800, 360), extendMove(600, 800, 360, 880, 360), handsAtRest(300, 880, 360)], handedness: 'Left' },
       ], { strokes: 0 }),
     );
     expect(r.controller.doc.strokeCount).toBe(0);
     expect(kinds(r)).toContain('transform-begin');
-    expect(r.controller.view.scale).toBeGreaterThan(1.35);
-    expect(r.controller.view.scale).toBeLessThan(1.65);
+    expect(kinds(r)).not.toContain('snapshot');
+    expect(r.controller.view.scale).toBeGreaterThan(0.55);
+    expect(r.controller.view.scale).toBeLessThan(0.8);
   });
 
-  it('cancels a short first stroke when the second hand joins within the window', () => {
-    const r = run(scenario('early join', twoHands(120, 4), { strokes: 0 }));
-    expect(kinds(r)).toContain('stroke-cancel');
-    expect(kinds(r)).not.toContain('stroke-commit');
-    expect(r.controller.doc.strokeCount).toBe(0);
+  it('keeps brief writing when the writing pose is released before a transform', () => {
+    const r = run(scenario('early join', twoHands(120, 4), { strokes: 1 }));
+    expect(kinds(r)).toContain('stroke-commit');
+    expect(kinds(r)).toContain('transform-begin');
+    expect(r.controller.doc.strokeCount).toBe(1);
   });
 
   it('keeps meaningful writing when the second hand joins late', () => {
@@ -306,5 +307,53 @@ describe('determinism (F32)', () => {
     const flat = (r: ReturnType<typeof run>) => r.controller.doc.strokes.map((s) => points(s));
     expect(flat(a)).toEqual(flat(b));
     expect(kinds(a)).toEqual(kinds(b));
+  });
+});
+
+describe('clap snapshots', () => {
+  it('keeps deliberate two-hand zoom from downloading a PNG', () => {
+    for (const record of [clapScenario(650), clapScenario(134, 0)]) {
+      const result = run(record);
+      expect(kinds(result)).not.toContain('snapshot');
+      expect(kinds(result)).toContain('transform-update');
+    }
+  });
+
+  it('can complete a fast clap when one hand is occluded at contact', () => {
+    const record = clapScenario();
+    const frames = record.frames.map((frame) => frame.t > 400 && frame.t < 500
+      ? { ...frame, hands: frame.hands.slice(0, 1) }
+      : frame);
+    expect(kinds(run({ ...record, frames })).filter((kind) => kind === 'snapshot')).toHaveLength(1);
+  });
+
+  it('ignores a hand disappearing before the palms are close', () => {
+    const record = clapScenario();
+    const frames = record.frames.map((frame) => frame.t > 340
+      ? { ...frame, hands: frame.hands.slice(0, 1) }
+      : frame);
+    expect(kinds(run({ ...record, frames }))).not.toContain('snapshot');
+  });
+
+  it('reports one snapshot for a fast clap through the tracking pipeline', () => {
+    const result = run(clapScenario());
+    expect(kinds(result).filter((kind) => kind === 'snapshot')).toHaveLength(1);
+    expect(result.controller.doc.strokeCount).toBe(0);
+    expect(result.controller.view.scale).toBeCloseTo(1, 1);
+  });
+});
+
+describe('rectangle snapshots', () => {
+  it('holds a rectangle to capture once and rearms after the frame is released', () => {
+    for (const [record, count] of [[frameSnapshotScenario(), 1], [frameSnapshotScenario(550, true), 2]] as const) {
+      const result = run(record);
+      expect(kinds(result).filter((kind) => kind === 'snapshot')).toHaveLength(count);
+      expect(kinds(result)).not.toContain('stroke-begin');
+      expect(result.controller.view.scale).toBeCloseTo(1, 1);
+    }
+  });
+
+  it('ignores a briefly formed rectangle', () => {
+    expect(kinds(run(frameSnapshotScenario(250)))).not.toContain('snapshot');
   });
 });

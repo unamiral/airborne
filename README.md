@@ -4,8 +4,9 @@ A lightweight browser whiteboard for writing, sketching, and explaining with a
 laptop webcam and bare hands, or with a mouse or trackpad.
 
 - **Extend your thumb, index and middle finger in roughly the same direction** and draw with your index fingertip. Angle your thumb away to stop. The close-fingertip gesture also works.
-- **Use the writing gesture with both hands** to move and zoom the board.
-- **Hold a fist** until the ring fills, then sweep to erase whole strokes.
+- **Extend both hands** and move them together to zoom in or apart to zoom out. Move both in the same direction to pan.
+- **Hold a fist with your knuckles facing the camera** until the ring fills, then sweep to erase whole strokes.
+- **Make an L with each thumb and index finger.** Point your thumbs inward, curl the remaining fingers, and hold the rectangle for about half a second to download a PNG of the visible board. Clap once for an alternate shortcut. Your browser controls the download location.
 - **Pinch on a control** in the left strip to use it (one action per pinch).
 
 Hand tracking (MediaPipe Hand Landmarker) runs locally in a web worker. Camera
@@ -76,9 +77,10 @@ rasterizer and must not be used for GPU numbers.
 |---|---|---|---|
 | Draw | Thumb, index and middle aligned, draw with index, then angle thumb away | Drag with the pen tool | – |
 | Dot | Brief writing pose | Click | – |
-| Move board | Writing pose on both hands, move together | Hold Space and drag, middle button, or Move tool | – |
-| Zoom | Writing pose on both hands, move apart/together | Wheel or trackpad pinch (anchored at the pointer) | – |
-| Erase | Hold a fist ~0.2 s, then sweep | Eraser tool and drag | – |
+| Move board | Two extended hands, move both in the same direction | Hold Space and drag, middle button, or Move tool | – |
+| Zoom | Two extended hands, bring closer to zoom in or spread to zoom out | Wheel or trackpad pinch (anchored at the pointer) | – |
+| Erase | Hold a fist with the knuckles facing the camera for ~0.2 s, then sweep | Eraser tool and drag | – |
+| Save board PNG | Hold a two-hand rectangle or clap once | Export PNG button | – |
 | Undo / redo | Pinch the Undo / Redo buttons | Buttons | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z; with the board focused also Z / Shift+Z |
 | Clear | Pinch Clear, release, pinch “Clear board” | Clear → Clear board | C (board focused) → dialog |
 | Pause / resume hand input | Pinch Pause | Pause button | P (board focused); Escape ends the current interaction and pauses |
@@ -126,7 +128,7 @@ gzip or brotli: the cold camera-mode payload is 9.6 MiB gzip / 8.0 MiB brotli
 3. Hold one hand up, open; watch the hover ring follow the index fingertip.
 4. Extend your thumb, index and middle finger together and write “1 + 1”. Angle your thumb away between strokes.
 5. Pinch the **Red** swatch, release, write “= 2”.
-6. Use the writing gesture with both hands and spread your hands to zoom.
+6. Extend both hands, bring them closer to zoom in, then spread them to zoom out.
 7. Hold a fist over the “2” until the ring fills, sweep across it, open.
 8. Pinch **Undo** to bring it back; pinch **Export** (or click) to save a PNG.
 
@@ -170,7 +172,7 @@ An automated version of this script runs in `tests/e2e/bench/release.spec.ts`.
 ## Handwriting cleanup
 
 Choose **Clean** to apply an undoable cleanup to all board ink. Light applies a
-bounded binomial smoothing to sampled stroke points, preserving endpoints,
+bounded, distance-weighted smoothing to sampled stroke points, preserving endpoints,
 marked corners, dots and stroke boundaries. Smooth and align additionally
 nudges the baselines of simple, separated clusters when their sizes and
 bottoms are consistent. It deliberately skips baseline correction for

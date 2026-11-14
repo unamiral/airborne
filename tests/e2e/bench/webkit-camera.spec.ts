@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enterBoard } from '../support';
 import { resolve } from 'node:path';
 import type {} from '../../../src/dev/devtools';
 
@@ -10,7 +11,7 @@ test('continues tracking a hand when WebKit repeats camera media timestamps', as
     path: resolve('tests/fixtures/images/pointing_up.jpg'),
   }));
   await page.addInitScript(() => {
-    navigator.mediaDevices.getUserMedia = async () => {
+    const getUserMedia = async (): Promise<MediaStream> => {
       const image = new Image();
       image.src = '/test-hand.jpg';
       await image.decode();
@@ -27,9 +28,12 @@ test('continues tracking a hand when WebKit repeats camera media timestamps', as
       track.stop = () => { clearInterval(timer); stop(); };
       return stream;
     };
+    Object.defineProperty(MediaDevices.prototype, 'getUserMedia', { value: getUserMedia, configurable: true });
   });
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
+  await expect(page.getByRole('button', { name: 'Stop camera' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__air!.metrics!.counter('accepted')), {
     timeout: 60_000,
   }).toBeGreaterThan(60);

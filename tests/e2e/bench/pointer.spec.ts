@@ -5,10 +5,11 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
-import { drawWithMouse } from '../support';
+import { enterBoard, drawWithMouse } from '../support';
 
 async function open(page: Page): Promise<void> {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 

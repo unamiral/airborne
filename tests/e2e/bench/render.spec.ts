@@ -4,13 +4,15 @@
  * cached composition equals a fresh uncached render (within anti-aliasing:
  * pixels differing by more than 96/255 in any channel count as mismatched).
  */
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
-import { hover, writeMove, scenario } from '../../support/scenarios';
-import { drawWithMouse } from '../support';
+import { clapScenario, frameSnapshotScenario, extendMove, handsAtRest, scenario } from '../../support/scenarios';
+import { enterBoard, drawWithMouse } from '../support';
 
 async function open(page: Page): Promise<void> {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 
@@ -177,8 +179,8 @@ test('large rebuilds are chunked and never show a blank frame (F29, normal workl
 test('two-hand zoom replay: smooth scale, no phantom strokes, consistent cache (F14, F15)', async ({ page }) => {
   await open(page);
   const record = scenario('zoom anchor', [
-    { phases: [hover(300, 500, 360), writeMove(600, 500, 360, 430, 330), hover(200, 430, 330)] },
-    { phases: [hover(300, 800, 360), writeMove(600, 800, 360, 900, 410), hover(200, 900, 410)], handedness: 'Left' },
+    { phases: [handsAtRest(300, 500, 360), extendMove(600, 500, 360, 430, 330), handsAtRest(200, 430, 330)] },
+    { phases: [handsAtRest(300, 800, 360), extendMove(600, 800, 360, 900, 410), handsAtRest(200, 900, 410)], handedness: 'Left' },
   ], { strokes: 0 });
   const result = await page.evaluate(async (r) => {
     const air = window.__air!;
@@ -198,3 +200,21 @@ test('two-hand zoom replay: smooth scale, no phantom strokes, consistent cache (
   }
   await expectMatchesReference(page, 'after two-hand zoom');
 });
+
+for (const [gesture, record] of [['clap', clapScenario()], ['held rectangle', frameSnapshotScenario()]] as const) {
+  test(`a ${gesture} downloads exactly one board PNG without changing the ink`, async ({ page }) => {
+    await open(page);
+    await drawWithMouse(page, [[450, 250], [480, 290], [515, 310]]);
+    const downloads: string[] = [];
+    page.on('download', (download) => downloads.push(download.suggestedFilename()));
+    const downloaded = page.waitForEvent('download');
+    await page.evaluate((r) => window.__air!.replay(r, Number.POSITIVE_INFINITY), record);
+    const png = await downloaded;
+    expect(await png.failure()).toBeNull();
+    const bytes = await readFile(await png.path());
+    expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect(downloads).toEqual([expect.stringMatching(/^air-whiteboard-.*\.png$/)]);
+    await expect(page.getByText('Board PNG download requested', { exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(1);
+  });
+}

@@ -67,6 +67,15 @@ describe('hand features', () => {
     }
   });
 
+  it('recognizes extended hands through roll, pitch and yaw while excluding writing and fists', () => {
+    for (const [roll, pitch, yaw] of [[0, 0, 0], [35, -20, 30], [-25, 35, -60], [10, 0, 75]] as const) {
+      expect(at(withRotation(POSES.open, roll, pitch, yaw)).extended).toBe(true);
+      expect(at(withRotation(POSES.writing(), roll, pitch, yaw)).extended).toBe(false);
+      expect(at(withRotation(POSES.fist, roll, pitch, yaw)).extended).toBe(false);
+      expect(at(withRotation(POSES.fist, roll, pitch, yaw)).fist).toBe(true);
+    }
+  });
+
   it('accepts a plausible pinch pose and rejects thumb/index proximity inside a fist', () => {
     expect(at(POSES.pinch()).pinchPose).toBe(true);
     expect(at(POSES.tightPinch()).pinchPose).toBe(true);

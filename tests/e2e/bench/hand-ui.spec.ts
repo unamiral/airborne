@@ -7,12 +7,13 @@ import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
 import { POSES } from '../../support/hands';
 import { hover, move, writeMove, scenario, still, type Phase } from '../../support/scenarios';
-import { drawWithMouse, inkPixels } from '../support';
+import { enterBoard, drawWithMouse, inkPixels } from '../support';
 
 const controlAt = (ms: number, x: number, y: number): Phase => ({ ms, pose: POSES.pinch(), path: still(x, y) });
 
 async function open(page: Page): Promise<void> {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 
@@ -93,6 +94,7 @@ test('a hand can pause and resume; paused hands never draw (F25)', async ({ page
 test.describe('lifecycle with the fake camera (F25)', () => {
   async function startCamera(page: Page): Promise<void> {
     await page.goto('./?hud=0&backend=cpu');
+    await enterBoard(page);
     await page.getByRole('button', { name: 'Start camera' }).first().click();
     await expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
   }

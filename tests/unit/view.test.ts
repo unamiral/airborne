@@ -47,10 +47,10 @@ describe('view transforms (F15, F16)', () => {
     }
   });
 
-  it('scales by the separation ratio and never rotates', () => {
+  it('scales inversely with separation and never rotates', () => {
     const t = new TwoHandTransform(IDENTITY_VIEW, boardPoint(400, 300), boardPoint(600, 300), 40, limits);
     const v = t.update(boardPoint(300, 300), boardPoint(700, 300), IDENTITY_VIEW);
-    expect(v.scale).toBeCloseTo(2, 12);
+    expect(v.scale).toBeCloseTo(0.5, 12);
     const rotated = t.update(boardPoint(500, 200), boardPoint(500, 400), v);
     expect(rotated.scale).toBeCloseTo(1, 12); // vertical separation 200 = original: no rotation term
   });
@@ -58,7 +58,7 @@ describe('view transforms (F15, F16)', () => {
   it('freezes scale below the minimum separation and rebases continuously', () => {
     const t = new TwoHandTransform(IDENTITY_VIEW, boardPoint(400, 300), boardPoint(600, 300), 40, limits);
     let v = t.update(boardPoint(450, 300), boardPoint(550, 300), IDENTITY_VIEW);
-    expect(v.scale).toBeCloseTo(0.5, 12);
+    expect(v.scale).toBeCloseTo(2, 12);
     const frozen = t.update(boardPoint(490, 300), boardPoint(510, 300), v); // 20 px apart
     expect(frozen.scale).toBe(v.scale);
     v = frozen;
@@ -68,7 +68,7 @@ describe('view transforms (F15, F16)', () => {
     expect(rebased.tx).toBeCloseTo(v.tx, 9);
     expect(rebased.ty).toBeCloseTo(v.ty, 9);
     const grown = t.update(boardPoint(440, 300), boardPoint(560, 300), rebased);
-    expect(grown.scale).toBeCloseTo(v.scale * 2, 9);
+    expect(grown.scale).toBeCloseTo(v.scale / 2, 9);
   });
 
   it('fits content (and resets for an empty board)', () => {

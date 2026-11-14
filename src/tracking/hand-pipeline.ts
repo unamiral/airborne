@@ -38,6 +38,7 @@ export interface HandView {
   readonly id: number;
   readonly pen: SurfacePoint;
   readonly rawPen: SurfacePoint;
+  readonly palm: SurfacePoint;
   readonly usable: boolean;
   readonly inReach: boolean;
   readonly outlier: boolean;
@@ -53,6 +54,7 @@ export interface PipelineOutput {
 
 interface TrackState {
   readonly filter: PointFilter;
+  readonly palmFilter: PointFilter;
   readonly detector: DiscontinuityDetector;
   lastPen: SurfacePoint | null;
 }
@@ -103,7 +105,10 @@ export class HandPipeline {
     const remap = config.reach !== this.config.reach;
     this.config = config;
     const params = oneEuroFor(config);
-    for (const t of this.tracks.values()) t.filter.setParams(params);
+    for (const t of this.tracks.values()) {
+      t.filter.setParams(params);
+      t.palmFilter.setParams(params);
+    }
     if (remap) this.remap();
   }
 
@@ -141,6 +146,7 @@ export class HandPipeline {
     this.mapping = new SurfaceMapping(input);
     for (const t of this.tracks.values()) {
       t.filter.reset();
+      t.palmFilter.reset();
       t.detector.reset();
       t.lastPen = null;
     }
@@ -151,6 +157,7 @@ export class HandPipeline {
     if (state === undefined) {
       state = {
         filter: new PointFilter(oneEuroFor(this.config), this.config.gesture.trackExpiryMs / 1000),
+        palmFilter: new PointFilter(oneEuroFor(this.config), this.config.gesture.trackExpiryMs / 1000),
         detector: new DiscontinuityDetector(this.config.outlier),
         lastPen: null,
       };
@@ -191,6 +198,7 @@ export class HandPipeline {
       const s = this.tracks.get(id);
       if (s !== undefined) {
         s.filter.reset();
+        s.palmFilter.reset();
         s.detector.reset();
       }
     }
@@ -214,6 +222,12 @@ export class HandPipeline {
       }
       const isAmbiguous = ambiguous.has(id);
       const usable = !outlier && !isAmbiguous && pen !== null;
+      // Fingertip-only discontinuities are common as the hand opens or
+      // closes. The identity tracker separately gates palm jumps.
+      const palmUsable = !isAmbiguous;
+      const filteredPalm = palmUsable ? state.palmFilter.filter(palm.x, palm.y, t / 1000) : null;
+      const gesturePalm = filteredPalm === null ? palm : surfacePoint(filteredPalm.x, filteredPalm.y);
+      const palmRegion = layout.hitTest(gesturePalm);
       const shown = pen ?? raw.point;
       state.lastPen = shown;
       const inReach = shown.x >= 0 && shown.y >= 0 && shown.x <= layout.width && shown.y <= layout.height;
@@ -225,11 +239,22 @@ export class HandPipeline {
         pinchPose: f.pinchPose,
         writingProximity: raw.inReach ? f.writingProximity : null,
         fist: f.fist,
+        extended: f.extended,
+        frameCorner: f.frameCorner,
+        palm: gesturePalm,
+        palmUsable,
+        palmRegion,
+        clap: f.palmNormal === null ? undefined : {
+          // Camera coordinates keep the clap independent of reach and zoom.
+          center: { x: f.palm.x * camera.width, y: f.palm.y * camera.height },
+          size: f.palmSizePx,
+          normal: { x: f.palmNormal[0], y: f.palmNormal[1] },
+        },
         pen: shown,
         inReach,
         region: inReach ? layout.hitTest(shown) : { kind: 'outside' },
       });
-      views.push({ id, pen: shown, rawPen: raw.point, usable, inReach, outlier: verdict.outlier, ambiguous: isAmbiguous, features: f });
+      views.push({ id, pen: shown, rawPen: raw.point, palm: gesturePalm, usable, inReach, outlier: verdict.outlier, ambiguous: isAmbiguous, features: f });
     });
     return {
       input: { kind: 'frame', t, hands: samples, expired: association.expiredTrackIds },

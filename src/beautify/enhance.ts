@@ -1,4 +1,4 @@
-/** Conservative, bounded edits for explicitly selected handwritten ink. */
+/** Conservative, bounded edits for handwritten ink. */
 import type { Stroke } from '../board/stroke';
 
 export type Enhancement = 'light' | 'balanced';
@@ -61,22 +61,24 @@ export function enhanceInk(strokes: readonly Stroke[], level: Enhancement, scale
     let changed = false;
     for (let i = 0; i < p.length; i++) {
       let x = p.x(i), y = p.y(i);
-      // A short binomial window reduces high-frequency wobble while retaining
-      // the overall path. Keep marked corners and their immediate neighbours.
+      // Balance the neighbours by their distance along the stroke. Equal
+      // weights would pull even straight ink toward the more distant sample
+      // when hand speed or camera cadence changes. Keep marked corners and
+      // their immediate neighbours.
       if (i > 0 && i < p.length - 1 && !corners.has(i) && !corners.has(i - 1) && !corners.has(i + 1) && p.length >= 5) {
-        let targetX: number, targetY: number;
-        if (i >= 2 && i + 2 < p.length && !corners.has(i - 2) && !corners.has(i + 2)) {
-          targetX = (p.x(i - 2) + 4 * p.x(i - 1) + 6 * x + 4 * p.x(i + 1) + p.x(i + 2)) / 16;
-          targetY = (p.y(i - 2) + 4 * p.y(i - 1) + 6 * y + 4 * p.y(i + 1) + p.y(i + 2)) / 16;
-        } else {
-          targetX = (p.x(i - 1) + 2 * x + p.x(i + 1)) / 4;
-          targetY = (p.y(i - 1) + 2 * y + p.y(i + 1)) / 4;
+        const beforeX = p.x(i - 1) - x, beforeY = p.y(i - 1) - y;
+        const afterX = p.x(i + 1) - x, afterY = p.y(i + 1) - y;
+        const before = Math.hypot(beforeX, beforeY);
+        const after = Math.hypot(afterX, afterY);
+        const span = before + after;
+        if (span > 0) {
+          const strength = level === 'light' ? 0.325 : 0.5;
+          const dx = (beforeX * (after / span) + afterX * (before / span)) * strength;
+          const dy = (beforeY * (after / span) + afterY * (before / span)) * strength;
+          const distance = Math.hypot(dx, dy);
+          const factor = distance > limit ? limit / distance : 1;
+          x += dx * factor; y += dy * factor;
         }
-        const strength = level === 'light' ? 0.65 : 1;
-        const dx = (targetX - x) * strength, dy = (targetY - y) * strength;
-        const distance = Math.hypot(dx, dy);
-        const factor = distance > limit ? limit / distance : 1;
-        x += dx * factor; y += dy * factor;
       }
       y += offset;
       if (Math.abs(x - p.x(i)) > 1e-6 || Math.abs(y - p.y(i)) > 1e-6) changed = true;

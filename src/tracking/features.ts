@@ -10,6 +10,7 @@
  */
 import { cameraPoint, type CameraPoint } from '../core/coords';
 import { cameraPixelDistance } from '../input/mapping';
+import type { FrameCorner } from '../input/snapshot-frame';
 import { FINGERS, LM } from './landmarks';
 import type { HandPayload } from './protocol';
 
@@ -57,6 +58,10 @@ export interface HandFeatures {
   /** Thumb/index proximity comes from a pinch, not from a closed fist. */
   readonly pinchPose: boolean;
   readonly fist: boolean;
+  readonly extended: boolean;
+  readonly frameCorner: FrameCorner | undefined;
+  /** Unit palm normal in camera axes. Its sign is irrelevant to the clap test. */
+  readonly palmNormal: Vec3 | null;
   readonly writingProximity: WritingProximity | null;
   readonly fingers: readonly FingerCurl[];
   /** Index fingertip, unmirrored normalized camera coordinates. */
@@ -81,6 +86,14 @@ function sub(a: Vec3, b: Vec3): Vec3 {
 
 function norm(a: Vec3): number {
   return Math.hypot(a[0], a[1], a[2]);
+}
+
+function palmNormal(world: readonly number[]): Vec3 | null {
+  const [ax, ay, az] = sub(at(world, LM.PINKY_MCP), at(world, LM.INDEX_MCP));
+  const [bx, by, bz] = sub(at(world, LM.MIDDLE_MCP), at(world, LM.WRIST));
+  const normal: Vec3 = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+  const length = norm(normal);
+  return length > 0 ? [normal[0] / length, normal[1] / length, normal[2] / length] : null;
 }
 
 /** Angle between two bone vectors in degrees (0 = straight continuation). */
@@ -109,6 +122,33 @@ function alignedWritingPose(point: (index: number) => Vec3, palmLength: number):
   const forward = sub(point(LM.MIDDLE_MCP), point(LM.WRIST));
   return bend(forward, thumb) <= 50 && bend(forward, index) <= 45 && bend(forward, middle) <= 45 &&
     bend(index, middle) <= 30 && bend(index, thumb) <= 35 && bend(middle, thumb) <= 35;
+}
+
+/** Thumb and index form a visible L while the remaining fingers fold back. */
+function frameCorner(hand: HandPayload, width: number, height: number, palmSize: number, palmScale: number, fingers: readonly FingerCurl[]): FrameCorner | undefined {
+  const index = fingers[0];
+  if (index === undefined || index.curled || index.bendDeg > 95 || index.tipPalmRatio < 0.95 ||
+      fingers.slice(1).filter((finger) => finger.bendDeg >= 115 && finger.tipPalmRatio <= 1.15).length < 2) return undefined;
+  const thumbLength = norm(sub(at(hand.world, LM.THUMB_TIP), at(hand.world, LM.THUMB_MCP)));
+  if (thumbLength < 0.34 * palmScale) return undefined;
+
+  const point = (joint: number) => ({ x: hand.landmarks[joint * 3]! * width, y: hand.landmarks[joint * 3 + 1]! * height });
+  const indexBase = point(LM.INDEX_MCP);
+  const thumbBase = point(LM.THUMB_MCP);
+  const indexTip = point(LM.INDEX_TIP);
+  const thumbTip = point(LM.THUMB_TIP);
+  const vector = (from: typeof indexBase, to: typeof indexBase) => ({ x: to.x - from.x, y: to.y - from.y });
+  const i = vector(indexBase, indexTip);
+  const u = vector(thumbBase, thumbTip);
+  const il = Math.hypot(i.x, i.y);
+  const ul = Math.hypot(u.x, u.y);
+  if (il < 0.42 * palmSize || ul < 0.24 * palmSize || Math.abs(i.x * u.x + i.y * u.y) > 0.58 * il * ul) return undefined;
+  return {
+    origin: { x: (indexBase.x + thumbBase.x) / 2, y: (indexBase.y + thumbBase.y) / 2 },
+    index: { x: i.x / il, y: i.y / il },
+    thumb: { x: u.x / ul, y: u.y / ul },
+    size: palmSize,
+  };
 }
 
 const PALM_POINTS = [LM.WRIST, LM.INDEX_MCP, LM.MIDDLE_MCP, LM.RING_MCP, LM.PINKY_MCP] as const;
@@ -175,7 +215,18 @@ export function extractFeatures(
   const thumbToMiddle = palmScaleM > 0
     ? norm(sub(at(world, LM.THUMB_TIP), at(world, LM.MIDDLE_MCP))) / palmScaleM
     : Number.POSITIVE_INFINITY;
-  const fist = fingers.length > 0 && fingers.every((f) => f.curled) && thumbToMiddle <= 0.75;
+  // One occluded tip can be noisy when the knuckles face forward. Require
+  // three fully curled fingers and strong evidence of curl from the fourth.
+  const fist = fingers.filter((f) => f.curled).length >= 3 && fingers.every((f) =>
+    f.bendDeg >= config.curlBendDeg - 25 && f.tipPalmRatio <= config.curlTipPalmRatio + 0.15
+  ) && thumbToMiddle <= 0.75;
+  const centre = palmCentre3(world);
+  const extended = hasWorldPalm && FINGERS.every(([mcp, pip, dip, tip]) => {
+    const base = at(world, mcp), first = at(world, pip), second = at(world, dip), end = at(world, tip);
+    const length = norm(sub(first, base)) + norm(sub(second, first)) + norm(sub(end, second));
+    return length > 0 && norm(sub(end, base)) >= 0.93 * length &&
+      norm(sub(end, centre)) >= 0.75 * palmScaleM;
+  });
   const index = fingers[0];
   const pinchPose = index !== undefined && !index.curled && index.tipPalmRatio >= config.pinchIndexReachRatio;
 
@@ -220,6 +271,9 @@ export function extractFeatures(
     pinchPose,
     writingProximity,
     fist,
+    extended,
+    frameCorner: !fist && invalidReason === null ? frameCorner(hand, cameraWidth, cameraHeight, palmSizePx, palmScaleM, fingers) : undefined,
+    palmNormal: hasWorldPalm && !fist && fingers.filter((f) => f.bendDeg < 120 && f.tipPalmRatio > 0.7).length >= 3 ? palmNormal(world) : null,
     fingers,
     pen,
     palm,

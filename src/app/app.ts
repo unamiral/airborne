@@ -109,6 +109,8 @@ export function createApp(root: HTMLElement): AppHandle {
   const announcer = new Announcer();
   const modeChip = el('span', { class: 'mode-chip', 'aria-hidden': 'true' }, ['Camera off']);
   const notice = el('p', { class: 'status notice', hidden: true });
+  const snapshotFeedback = el('div', { class: 'snapshot-feedback', hidden: true, 'aria-hidden': 'true' });
+  let snapshotFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
   let welcome: HTMLElement | null = null;
   let sessionState: SessionState = { kind: 'idle' };
   let cameras: CameraDevice[] = [];
@@ -236,7 +238,7 @@ export function createApp(root: HTMLElement): AppHandle {
     notice,
     preview.element,
   ]);
-  const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard]);
+  const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard, snapshotFeedback]);
   root.append(strip, boardWrap, clearDialog.element, settings.element, handwriting.element, beautify.element, announcer.element);
   if (!document.cookie.split('; ').includes('air-welcome=1')) {
     welcome = buildWelcome();
@@ -257,7 +259,9 @@ export function createApp(root: HTMLElement): AppHandle {
     return el('section', { class: 'card welcome', 'aria-labelledby': 'welcome-title' }, [
       el('h1', { id: 'welcome-title' }, ['Air Whiteboard']),
       el('p', {}, ['Write with your hands through the webcam, or draw with a mouse or trackpad.']),
-      el('p', {}, ['Extend your thumb, index and middle finger in roughly the same direction. Move your index fingertip to write. Angle your thumb away to stop. Use the same gesture with both hands to move and zoom. Pinch controls or hold a fist to erase.']),
+      el('p', {}, ['Align your thumb, index and middle finger to write. Angle your thumb away to stop. Pinch controls to select them.']),
+      el('p', {}, ['Bring two extended hands closer to zoom in or spread them apart to zoom out. Hold a fist to erase.']),
+      el('p', {}, ['To save a PNG, make an L with each thumb and index finger. Point your thumbs toward each other and hold for half a second. You can also clap once.']),
       el('p', {}, [
         'Hand tracking runs on this device. Camera images are not uploaded. One board is saved on this device in this browser.',
       ]),
@@ -329,6 +333,7 @@ export function createApp(root: HTMLElement): AppHandle {
     config: () => config,
     controller: () => activeBoard,
     activateControl: (id) => activateTarget(id),
+    saveSnapshot: () => { void exportPng(); },
     metrics: sink,
     now: () => performance.now(),
     onUpdate: () => {
@@ -429,7 +434,12 @@ export function createApp(root: HTMLElement): AppHandle {
     try {
       const blob = await renderPng(activeBoard, r.cssWidth, r.cssHeight, r.rasterScale, createExportSurface, document.documentElement.dataset.theme === 'dark', background);
       downloadBlob(blob, exportFileName(new Date()));
-      announcer.announce('Exported the visible board as a PNG image.');
+      const message = 'Board PNG download requested';
+      setText(snapshotFeedback, message);
+      snapshotFeedback.hidden = false;
+      clearTimeout(snapshotFeedbackTimer);
+      snapshotFeedbackTimer = setTimeout(() => { snapshotFeedback.hidden = true; }, 2400);
+      announcer.announce(message);
     } catch (error) {
       const message = error instanceof ExportError ? error.message : 'Export failed.';
       showNotice(`${message} Your board is unchanged.`);

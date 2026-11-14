@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { drawWithMouse } from './support';
+import { enterBoard, drawWithMouse } from './support';
 
 test('restores the board and theme and remembers the welcome choice', async ({ page }) => {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await drawWithMouse(page, [[250, 200], [400, 260]]);
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -20,6 +21,7 @@ test('restores the board and theme and remembers the welcome choice', async ({ p
   const before = await page.evaluate(() => localStorage.getItem('air-whiteboard-board-v1'));
   expect((JSON.parse(before!) as unknown[]).length).toBe(1);
   await page.reload();
+  await enterBoard(page);
   await expect(page.getByRole('heading', { name: 'Air Whiteboard' })).toHaveCount(0);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
@@ -30,6 +32,7 @@ test('restores the board and theme and remembers the welcome choice', async ({ p
 
 test('paper backgrounds change with dark mode and persist', async ({ page }) => {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
   for (const name of ['Grid', 'Cornell', 'Notebook']) {
@@ -46,6 +49,7 @@ test('paper backgrounds change with dark mode and persist', async ({ page }) => 
     return guides;
   })).toBeGreaterThan(100);
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('button', { name: 'Notebook', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('switch', { name: 'Dark mode' })).toHaveAttribute('aria-checked', 'true');
@@ -53,6 +57,7 @@ test('paper backgrounds change with dark mode and persist', async ({ page }) => 
 
 test('live camera background uses the active camera and is not restored on reload', async ({ page }) => {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('button', { name: 'Live camera' }).click();
@@ -67,6 +72,7 @@ test('live camera background uses the active camera and is not restored on reloa
   })).toBeGreaterThan(20);
   await page.getByRole('button', { name: 'Stop camera' }).click();
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('button', { name: 'Plain', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });

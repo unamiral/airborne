@@ -5,10 +5,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
 import { hover, writeMove, scenario } from '../../support/scenarios';
-import { drawWithMouse } from '../support';
+import { enterBoard, drawWithMouse } from '../support';
 
 async function open(page: Page): Promise<void> {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 
@@ -83,6 +84,7 @@ test('settings changes wait for the stroke to finish (idle boundary) (F27)', asy
 
 test('hiding the camera preview keeps inference running; practice is offered once (F28)', async ({ page }) => {
   await page.goto('./?hud=0&backend=cpu');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
   const offer = page.getByRole('region', { name: 'Practice offer' });

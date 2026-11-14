@@ -28,6 +28,7 @@ import type { MetricsSink } from './metrics';
 export interface HandInputDeps {
   readonly config: () => AppConfig;
   readonly controller: () => BoardController;
+  readonly saveSnapshot?: () => void;
   readonly activateControl: (id: string) => void;
   readonly metrics: MetricsSink;
   readonly now: () => number;
@@ -176,6 +177,7 @@ export class HandInput {
         controller: this.deps.controller(),
         boardRect: board,
         activateControl: this.deps.activateControl,
+        ...(this.deps.saveSnapshot === undefined ? {} : { saveSnapshot: this.deps.saveSnapshot }),
       });
     }
     this.deps.onStep?.(input, step.intents);
@@ -226,8 +228,10 @@ export class HandInput {
     const out: CursorView[] = [];
     const config = this.deps.config();
     for (const h of this.views) {
-      if (!h.inReach) continue;
-      const p = surfaceToBoard(h.pen, board);
+      const usingPalm = mode.kind === 'transforming' && (mode.a === h.id || mode.b === h.id) ||
+        (mode.kind === 'erase-arming' || mode.kind === 'erasing') && mode.owner === h.id;
+      if (!usingPalm && !h.inReach) continue;
+      const p = surfaceToBoard(usingPalm ? h.palm : h.pen, board);
       if (p.x < 0 || p.y < 0 || p.x > board.width || p.y > board.height) continue;
       const flags = this.stateValue.tracks.get(h.id);
       let cursorMode: CursorMode = 'hover';

@@ -4,12 +4,14 @@
  * deterministic replay of an exported recording.
  */
 import { expect, test } from '@playwright/test';
+import { enterBoard } from '../support';
 import { readFileSync } from 'node:fs';
 import type {} from '../../../src/dev/devtools';
 import { parseReplay } from '../../../src/dev/replay-format';
 
 test('records landmarks only, exports a valid replay, and replays deterministically', async ({ page }) => {
   await page.goto('./?hud=0&backend=cpu');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
   const recorder = page.getByRole('region', { name: 'Developer landmark recorder' });
@@ -47,6 +49,7 @@ test('records landmarks only, exports a valid replay, and replays deterministica
 
 test('recording stops itself at the duration limit', async ({ page }) => {
   await page.goto('./?hud=0&backend=cpu&recordMaxMs=600');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
   const recorder = page.getByRole('region', { name: 'Developer landmark recorder' });

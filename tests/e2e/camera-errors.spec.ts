@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { instrument, probe } from './support';
+import { enterBoard, instrument, probe } from './support';
 
 // F02: every failure class gets its own explanation and a working
 // retry/fallback. getUserMedia is replaced via an init script (a controlled
@@ -16,6 +16,7 @@ for (const { mode, text } of cases) {
   test(`explains ${mode} and keeps mouse drawing available`, async ({ page }) => {
     await instrument(page, mode);
     await page.goto('./');
+    await enterBoard(page);
     await page.getByRole('button', { name: 'Start camera' }).first().click();
     const alert = page.getByRole('alert');
     await expect(alert).toContainText(text);
@@ -31,6 +32,7 @@ for (const { mode, text } of cases) {
 test('a pending permission prompt can be cancelled; double-clicking Start asks once', async ({ page }) => {
   await instrument(page, 'pending');
   await page.goto('./');
+  await enterBoard(page);
   const start = page.getByRole('button', { name: 'Start camera' }).first();
   await start.dblclick();
   await expect(page.getByRole('status')).toContainText('Waiting for camera permission');
@@ -42,6 +44,7 @@ test('a pending permission prompt can be cancelled; double-clicking Start asks o
 test('retry after denial succeeds once permission is granted', async ({ page }) => {
   await instrument(page, 'deny');
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await expect(page.getByRole('alert')).toContainText('denied');
   // Grant: restore the real getUserMedia (fake device) and retry.

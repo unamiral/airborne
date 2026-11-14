@@ -35,6 +35,10 @@ function sample(id: number, h: H = {}): HandSample {
       : h.writingProximity,
     pinchPose: h.pinchPose ?? true,
     fist: h.fist ?? false,
+    ...(h.extended === undefined ? {} : { extended: h.extended }),
+    ...(h.palm === undefined ? {} : { palm: h.palm }),
+    ...(h.palmRegion === undefined ? {} : { palmRegion: h.palmRegion }),
+    ...(h.clap === undefined ? {} : { clap: h.clap }),
     pen: surfacePoint(h.x ?? 500, h.y ?? 300),
     inReach: h.inReach ?? true,
     region: h.region ?? { kind: 'board' },
@@ -201,9 +205,9 @@ describe('two-hand arbitration (F14)', () => {
   it('cancels an early, short first stroke and starts transforming', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 303 }), sample(2, { ratio: PINCH, x: 700 })]);
-    const join = s.frame([sample(1, { ratio: PINCH, x: 305 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 303 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    const join = s.frame([sample(1, { ratio: PINCH, extended: true, x: 305 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
     expect(join.map((i) => i.kind)).toEqual(['stroke-cancel', 'transform-begin']);
     expect(s.kinds()).not.toContain('stroke-commit');
   });
@@ -211,57 +215,57 @@ describe('two-hand arbitration (F14)', () => {
   it('keeps intentional writing when the second hand joins late', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    for (let i = 0; i < 12; i++) s.frame([sample(1, { ratio: PINCH, x: 300 + i * 6 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 372 }), sample(2, { ratio: PINCH, x: 700 })]);
-    const join = s.frame([sample(1, { ratio: PINCH, x: 374 }), sample(2, { ratio: PINCH, x: 700 })]);
+    for (let i = 0; i < 12; i++) s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 + i * 6 }), sample(2, { ratio: OPEN, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 372 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    const join = s.frame([sample(1, { ratio: PINCH, extended: true, x: 374 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
     expect(join.map((i) => i.kind)).toEqual(['stroke-commit', 'transform-begin']);
   });
 
   it('starts transforming without ink when both hands confirm together', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    expect(s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]).map((i) => i.kind)).toEqual([
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    expect(s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]).map((i) => i.kind)).toEqual([
       'transform-begin',
     ]);
     expect(modeLabel(s.state)).toBe('Move');
-    expect(s.frame([sample(1, { ratio: PINCH, x: 290 }), sample(2, { ratio: PINCH, x: 720 })]).map((i) => i.kind)).toEqual([
+    expect(s.frame([sample(1, { ratio: PINCH, extended: true, x: 290 }), sample(2, { ratio: PINCH, extended: true, x: 720 })]).map((i) => i.kind)).toEqual([
       'transform-update',
     ]);
   });
 
-  it('freezes and waits for both hands to release after losing one; missing hands are not releases', () => {
+  it('freezes after losing one hand and waits for a visible release', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })]).map((i) => i.kind)).toEqual(['transform-end']);
-    expect(s.state.mode).toEqual({ kind: 'await-release', waiting: [1, 2], writing: true });
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    expect(s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 })]).map((i) => i.kind)).toEqual(['transform-end']);
+    expect(s.state.mode).toEqual({ kind: 'await-release', waiting: [1, 2], extended: true });
     s.frame([sample(1, { ratio: OPEN, x: 300 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 })]);
+    expect(s.state.mode.kind).toBe('hover');
     expect(s.kinds()).not.toContain('stroke-begin');
   });
 
   it('resumes one-handed use after the other hand leaves entirely (expiry, not release)', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 300 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 }), sample(2, { ratio: PINCH, extended: true, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 })]);
     s.frame([sample(1, { ratio: OPEN, x: 300 })]);
     // Hand 2 expires after 250 ms absent: ownership ends.
     s.frame([sample(1, { ratio: OPEN, x: 300 })], 250, [2]);
     expect(s.state.mode.kind).toBe('hover');
-    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })])).toEqual([]);
-    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })])[0]?.kind).toBe('stroke-begin');
+    expect(s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 })])).toEqual([]);
+    expect(s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 })])[0]?.kind).toBe('stroke-begin');
   });
 
   it('ignores a second pinching hand that was never seen open (another person entering)', () => {
     const s = new Sim();
     s.arm(1, { x: 300 });
-    s.frame([sample(1, { ratio: PINCH, x: 300 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 303 }), sample(2, { ratio: PINCH, x: 700 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 306 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 300 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 303 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, extended: true, x: 306 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(s.kinds()).toEqual(['stroke-begin', 'stroke-point', 'stroke-confirm', 'stroke-point']);
   });
 });
@@ -348,8 +352,8 @@ describe('pause and interruption (F25 subset)', () => {
     expect(a.send({ kind: 'interrupt', reason: 'blur', pause: true })).toEqual([]);
     const b = new Sim();
     b.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    b.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
-    b.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
+    b.frame([sample(1, { ratio: OPEN, extended: true, x: 300 }), sample(2, { ratio: OPEN, extended: true, x: 700 })]);
+    b.frame([sample(1, { ratio: OPEN, extended: true, x: 300 }), sample(2, { ratio: OPEN, extended: true, x: 700 })]);
     expect(b.send({ kind: 'interrupt', reason: 'resize', pause: false }).map((i) => i.kind)).toEqual(['transform-end']);
   });
 
@@ -469,6 +473,9 @@ describe('determinism and invariants', () => {
             break;
           case 'transform-end':
             transforming = false;
+            break;
+          case 'snapshot':
+            expect(stroke === 'none' && !erasing && !transforming).toBe(true);
             break;
           case 'erase-arming':
           case 'erase-cancel':

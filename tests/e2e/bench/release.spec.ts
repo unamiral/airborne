@@ -4,15 +4,17 @@
  * and an automated demo run (F36). Synthetic camera and synthetic hands.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { enterBoard } from '../support';
 import type {} from '../../../src/dev/devtools';
 import { POSES } from '../../support/hands';
-import { hover, move, writeMove, scenario, still, type HandScript, type Phase } from '../../support/scenarios';
+import { extendMove, handsAtRest, hover, move, writeMove, scenario, still, type HandScript, type Phase } from '../../support/scenarios';
 
 const ready = (page: Page) =>
   expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
 
 test('the HUD labels software timings, updates at most 4 Hz, and can be hidden (F33)', async ({ page }) => {
   await page.goto('./?backend=cpu&recorder=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await ready(page);
   const hud = page.locator('.hud');
@@ -38,11 +40,13 @@ test('the HUD labels software timings, updates at most 4 Hz, and can be hidden (
   expect(counts.source).toBeGreaterThanOrEqual(counts.admitted);
   expect(counts.admitted).toBeGreaterThanOrEqual(counts.accepted + counts.stale);
   await page.goto('./?hud=0&recorder=0');
+  await enterBoard(page);
   await expect(page.locator('.hud')).toHaveCount(0);
 });
 
 test('tracking keeps working offline once assets are loaded (F31)', async ({ page, context }) => {
   await page.goto('./?hud=0&backend=cpu&recorder=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Start camera' }).first().click();
   await ready(page);
   await context.setOffline(true);
@@ -67,6 +71,7 @@ test('twenty camera start/stop cycles leave no workers, live tracks, or heap gro
     };
   });
   await page.goto('./?hud=0&backend=cpu&recorder=0');
+  await enterBoard(page);
   const cdp = await page.context().newCDPSession(page);
   const heap = async (): Promise<number> => {
     await cdp.send('HeapProfiler.collectGarbage');
@@ -96,6 +101,7 @@ test('twenty camera start/stop cycles leave no workers, live tracks, or heap gro
 
 test('automated demo: write, recolor, zoom, erase, undo, and export (F36)', async ({ page }) => {
   await page.goto('./?hud=0&recorder=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   const surface = await page.evaluate(() => {
     const l = window.__air!.layout();
@@ -120,8 +126,8 @@ test('automated demo: write, recolor, zoom, erase, undo, and export (F36)', asyn
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(7);
   // Two-hand zoom.
   await play([
-    { phases: [hover(300, 560, 500), writeMove(600, 560, 500, 500, 500), hover(250, 500, 500)] },
-    { phases: [hover(300, 760, 500), writeMove(600, 760, 500, 840, 500), hover(250, 840, 500)], handedness: 'Left' },
+    { phases: [handsAtRest(300, 560, 500), extendMove(600, 560, 500, 601, 500), handsAtRest(250, 601, 500)] },
+    { phases: [handsAtRest(300, 760, 500), extendMove(600, 760, 500, 719, 500), handsAtRest(250, 719, 500)], handedness: 'Left' },
   ]);
   const scale = await page.evaluate(() => window.__air!.controller.view.scale);
   expect(scale).toBeGreaterThan(1.2);
@@ -134,7 +140,7 @@ test('automated demo: write, recolor, zoom, erase, undo, and export (F36)', asyn
     const mid = Math.floor(s.points.length / 2);
     return { x: s.points.x(mid) * v.scale + v.tx + board.x, y: s.points.y(mid) * v.scale + v.ty + board.y };
   });
-  await play([{ phases: [hover(300, two.x - 60, two.y), { ms: 700, pose: POSES.fist, path: move(two.x - 60, two.y, two.x + 30, two.y) }, hover(300, two.x + 30, two.y - 80)] }]);
+  await play([{ phases: [hover(300, two.x - 18, two.y), { ms: 700, pose: POSES.fist, path: move(two.x - 18, two.y, two.x + 30, two.y) }, hover(300, two.x + 30, two.y - 80)] }]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(6);
   const undo = await centre('[data-hand-target="undo"]');
   await play([{ phases: [hover(300, undo.x, undo.y), { ms: 250, pose: POSES.pinch(), path: still(undo.x, undo.y) }, hover(250, undo.x, undo.y)] }]);

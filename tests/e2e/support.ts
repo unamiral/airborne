@@ -81,3 +81,8 @@ export async function drawWithMouse(page: Page, points: ReadonlyArray<readonly [
   for (const [x, y] of rest) await page.mouse.move(box.x + x, box.y + y, { steps: 4 });
   await page.mouse.up();
 }
+
+export async function enterBoard(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Click to continue to Air Whiteboard' }).click();
+  await expect(page.getByRole('navigation', { name: 'Whiteboard tools' })).toBeVisible();
+}

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
 import { hover, writeMove, scenario } from '../../support/scenarios';
-import { inkPixels } from '../support';
+import { enterBoard, inkPixels } from '../support';
 
 // Synthetic landmark replay through the live browser path (pipeline, reducer,
 // controller, renderer). Not a camera or detector test.
@@ -25,6 +25,7 @@ const record = scenario(
 
 test('replayed hand input draws strokes and records draw-submission timing (F09, F32)', async ({ page }) => {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.evaluate((r) => window.__air!.replay(r, 1), JSON.parse(JSON.stringify(record)) as unknown);
   await expect.poll(() => page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(2);
@@ -40,6 +41,7 @@ test('replayed hand input draws strokes and records draw-submission timing (F09,
 
 test('playback speed does not change the committed board (F32)', async ({ page }) => {
   await page.goto('./?hud=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   const json = JSON.parse(JSON.stringify(record)) as unknown;
   await page.evaluate((r) => window.__air!.replay(r, 1), json);
@@ -48,6 +50,7 @@ test('playback speed does not change the committed board (F32)', async ({ page }
   await page.evaluate(() => localStorage.removeItem('air-whiteboard-board-v1'));
   await page.context().clearCookies();
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.evaluate((r) => window.__air!.replay(r, Number.POSITIVE_INFINITY), json);
   const fast = await page.evaluate(() => window.__air!.boardDump());
@@ -55,6 +58,7 @@ test('playback speed does not change the committed board (F32)', async ({ page }
   await page.evaluate(() => localStorage.removeItem('air-whiteboard-board-v1'));
   await page.context().clearCookies();
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.evaluate((r) => window.__air!.replay(r, 0.5), json);
   const slow = await page.evaluate(() => window.__air!.boardDump());

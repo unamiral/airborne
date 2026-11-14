@@ -3,6 +3,7 @@
  * video, not the photo file). Skipped when Chromium exposes fewer devices.
  */
 import { expect, test } from '@playwright/test';
+import { enterBoard } from '../support';
 import type {} from '../../../src/dev/devtools';
 
 test.use({
@@ -11,6 +12,7 @@ test.use({
 
 test('switching cameras keeps the tracker, starts a new epoch, and keeps the board', async ({ page }) => {
   await page.goto('./?hud=0&backend=cpu&recorder=0');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   const box = (await page.locator('canvas.board').boundingBox())!;
   await page.mouse.move(box.x + 100, box.y + 100);

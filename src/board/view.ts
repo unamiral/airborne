@@ -61,7 +61,7 @@ export function fitView(bounds: Bounds, boardWidth: number, boardHeight: number,
 /**
  * Simultaneous two-hand pan and zoom. At start (or rebase) it stores the
  * midpoint m0, separation d0, scale s0, and world anchor w0 = (m0 - t0)/s0;
- * each update sets s = clamp(s0 * d/d0) and t = m - w0 * s, so the world
+ * each update sets s = clamp(s0 * d0/d) and t = m - w0 * s, so the world
  * anchor stays under the current midpoint. Below the minimum separation the
  * scale freezes while midpoint panning continues; when separation becomes
  * usable again the reference is rebased at the current view, which is
@@ -101,7 +101,7 @@ export class TwoHandTransform {
       this.d0 = d;
       this.w0 = toWorld(current, m);
     }
-    const scale = this.scaling ? clamp((this.s0 * d) / this.d0, this.limits.minScale, this.limits.maxScale) : this.s0;
+    const scale = this.scaling ? clamp((this.s0 * this.d0) / d, this.limits.minScale, this.limits.maxScale) : this.s0;
     const next = { scale, tx: m.x - this.w0.x * scale, ty: m.y - this.w0.y * scale };
     return isValidView(next) ? next : current;
   }

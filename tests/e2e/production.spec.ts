@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { drawWithMouse, instrument, probe } from './support';
+import { enterBoard, drawWithMouse, instrument, probe } from './support';
 
 test('the production bundle contains no developer tooling or source maps (F31)', () => {
   const files = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
@@ -25,6 +25,7 @@ test('a full session makes only same-origin GET requests and keeps data locally 
   page.on('websocket', (w) => sockets.push(w.url()));
   await instrument(page);
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await drawWithMouse(page, [[100, 100], [300, 200]]);
   await page.getByRole('button', { name: 'Settings' }).click();

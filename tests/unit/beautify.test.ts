@@ -31,6 +31,11 @@ describe('conservative ink enhancement', () => {
       expect(Math.hypot(result[i]! - coordinates[i]!, result[i + 1]! - coordinates[i + 1]!)).toBeLessThanOrEqual(1.8 + 1e-9);
     }
   });
+  it('preserves a straight stroke drawn at uneven speeds', () => {
+    const stroke = make(1, [0, 0, 1, 1, 8, 8, 10, 10, 25, 25]);
+    expect(enhanceInk([stroke], 'light', 1)).toEqual([]);
+    expect(enhanceInk([stroke], 'balanced', 1)).toEqual([]);
+  });
   it('gently aligns plausible groups but leaves an ambiguous layout alone', () => {
     const line = [0, 1, 2, 3].map((i) => make(i + 1, [i * 20, 0, i * 20 + 3, 10 + (i === 0 ? 2 : 0)]));
     const edits = enhanceInk(line, 'balanced', 1);

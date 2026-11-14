@@ -124,3 +124,43 @@ export const writeMove = (ms: number, x0: number, y0: number, x1: number, y1: nu
   path: move(x0, y0, x1, y1),
 });
 export const writeAt = (ms: number, x: number, y: number, ratio = 0.24): Phase => ({ ms, pose: POSES.writing(ratio), path: still(x, y) });
+
+export const extendMove = (ms: number, x0: number, y0: number, x1: number, y1: number): Phase => ({
+  ms, pose: POSES.open, path: move(x0, y0, x1, y1),
+});
+export const handsAtRest = (ms: number, x: number, y: number): Phase => ({ ms, pose: { ...POSES.relaxed, middle: POSES.halfCurl.middle }, path: still(x, y) });
+
+/** Edge-on open hands approaching along the palm normals, then separating. */
+export function clapScenario(approachMs = 134, yaw = 70): ReplayRecord {
+  const clapPose: Pose = { ...POSES.open, yaw };
+  return scenario('one clap', [
+    { phases: [
+      { ms: 300, pose: clapPose, path: still(515, 285) },
+      { ms: approachMs, pose: clapPose, path: move(515, 285, 622, 285) },
+      { ms: 200, pose: clapPose, path: still(622, 285) },
+      { ms: 200, pose: clapPose, path: move(622, 285, 515, 285) },
+    ] },
+    { handedness: 'Left', phases: [
+      { ms: 300, pose: clapPose, path: still(765, 285) },
+      { ms: approachMs, pose: clapPose, path: move(765, 285, 658, 285) },
+      { ms: 200, pose: clapPose, path: still(658, 285) },
+      { ms: 200, pose: clapPose, path: move(658, 285, 765, 285) },
+    ] },
+  ], { strokes: 0 });
+}
+
+export function frameSnapshotScenario(holdMs = 1250, repeated = false): ReplayRecord {
+  const pair = (x: number, yaw: number): Phase[] => {
+    const pose = { ...POSES.frame, roll: 12, yaw };
+    const frame = { ms: holdMs, pose, path: still(x, 280) };
+    return [
+      hover(200, x, 280), frame,
+      ...(repeated ? [handsAtRest(380, x, 280), frame] : []),
+      handsAtRest(380, x, 280),
+    ];
+  };
+  return scenario('frame snapshot', [
+    { phases: pair(460, 25), handedness: 'Right' },
+    { phases: pair(820, -20), handedness: 'Left' },
+  ], { strokes: 0 });
+}

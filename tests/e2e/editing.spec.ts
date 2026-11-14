@@ -3,10 +3,11 @@
  * (F20, F22, F23, F24, F25 subsets).
  */
 import { expect, test, type Page } from '@playwright/test';
-import { drawWithMouse, inkPixels } from './support';
+import { enterBoard, drawWithMouse, inkPixels } from './support';
 
 async function open(page: Page): Promise<void> {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 

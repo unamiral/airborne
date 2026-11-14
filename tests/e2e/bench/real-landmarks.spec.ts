@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enterBoard } from '../support';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { CONFIG_VERSION, DEFAULT_CONFIG } from '../../../src/app/config';
 import { MEDIAPIPE_VERSION, MODEL_SHA256 } from '../../../src/app/assets';
@@ -21,6 +22,7 @@ const IMAGES = [
 test('real model landmarks on still images', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./?hud=0');
+  await enterBoard(page);
   const payload = IMAGES.map((i) => readFileSync(`tests/fixtures/images/${i.file}`).toString('base64'));
   const results = await page.evaluate(async (b64s) => {
     const blobs = b64s.map((b) => new Blob([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], { type: 'image/jpeg' }));

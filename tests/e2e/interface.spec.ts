@@ -4,10 +4,11 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { drawWithMouse, inkPixels } from './support';
+import { enterBoard, drawWithMouse, inkPixels } from './support';
 
 async function open(page: Page): Promise<void> {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Use mouse' }).click();
 }
 
@@ -192,6 +193,7 @@ test('hand targets are at least 48 CSS px and fully inside the 1280×800 surface
 
 test('writing distances survive refresh and reset', async ({ page }) => {
   await page.goto('./');
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
   await dialog.getByRole('spinbutton', { name: 'Start distance' }).fill('0.38');
@@ -199,11 +201,13 @@ test('writing distances survive refresh and reset', async ({ page }) => {
   await dialog.getByRole('spinbutton', { name: 'Release distance' }).fill('0.61');
   await dialog.getByRole('spinbutton', { name: 'Release distance' }).press('Tab');
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(dialog.getByRole('spinbutton', { name: 'Start distance' })).toHaveValue('0.38');
   await expect(dialog.getByRole('spinbutton', { name: 'Release distance' })).toHaveValue('0.61');
   await dialog.getByRole('button', { name: 'Reset to defaults' }).click();
   await page.reload();
+  await enterBoard(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(dialog.getByRole('spinbutton', { name: 'Start distance' })).toHaveValue('0.32');
   await expect(dialog.getByRole('spinbutton', { name: 'Release distance' })).toHaveValue('0.55');
@@ -212,6 +216,7 @@ test('writing distances survive refresh and reset', async ({ page }) => {
 test('desktop sidebar fits its controls with the camera preview visible', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('./');
+  await enterBoard(page);
   const dimensions = await page.evaluate(() => {
     const preview = document.querySelector<HTMLElement>('.preview')!;
     preview.hidden = false;

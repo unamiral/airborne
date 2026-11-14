@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { drawWithMouse, inkPixels, instrument, probe } from './support';
+import { enterBoard, drawWithMouse, inkPixels, instrument, probe } from './support';
 
 test.describe('F01 startup and pointer-only entry', () => {
   test('shows a usable board without asking for the camera or loading the model', async ({ page }) => {
@@ -7,6 +7,7 @@ test.describe('F01 startup and pointer-only entry', () => {
     page.on('request', (r) => requests.push(r.url()));
     await instrument(page);
     const response = await page.goto('./');
+    await enterBoard(page);
     expect(response?.status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'Air Whiteboard' })).toBeVisible();
     await expect(page.getByText('Camera images are not uploaded')).toBeVisible();
@@ -26,6 +27,7 @@ test.describe('F01 startup and pointer-only entry', () => {
   test('loads and draws when media APIs are missing, and explains the camera limitation', async ({ page }) => {
     await instrument(page, 'absent');
     await page.goto('./');
+    await enterBoard(page);
     await page.getByRole('button', { name: 'Use mouse' }).click();
     await drawWithMouse(page, [
       [100, 100],
@@ -40,6 +42,7 @@ test.describe('F01 startup and pointer-only entry', () => {
     const requests: string[] = [];
     page.on('request', (r) => requests.push(r.url()));
     const response = await page.goto('./');
+    await enterBoard(page);
     const headers = response?.headers() ?? {};
     expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(headers['content-security-policy']).not.toContain('unsafe-inline');
