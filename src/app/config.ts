@@ -192,7 +192,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   prediction: {
     enabled: false,
     maxHorizonMs: 16,
-    maxDistancePx: 6,
+    // Plan seed 6 px overshot an instantaneous stop by 3.0 px (gate: 3 px);
+    // 5 px keeps the worst synthetic overshoot at 2.5 px. See ADR 0003.
+    maxDistancePx: 5,
   },
   stroke: {
     minSpacingPx: 0.5,
