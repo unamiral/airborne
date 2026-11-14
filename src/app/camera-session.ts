@@ -287,11 +287,10 @@ export class CameraSession {
       permissionToReadyMs: this.streamAt !== null ? this.readyAt - this.streamAt : null,
       readyToFirstResultMs: null,
     };
-    const tracker2 = tracker;
     this.scheduler = new FrameScheduler({
       video: this.deps.video,
       snapshot: this.deps.snapshot,
-      detect: (envelope) => tracker2.detect(envelope),
+      detect: (envelope) => tracker.detect(envelope),
       onResult: (admitted) => this.onResult(admitted),
       onFailure: (error) => this.onDetectFailure(error),
       now: this.deps.now,

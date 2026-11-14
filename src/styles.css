@@ -478,6 +478,43 @@ input:focus-visible,
   border: 0;
 }
 
+.recorder {
+  position: fixed;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #ffffff;
+  border: 1px dashed #6b7280;
+  border-radius: 8px;
+}
+
+.recorder[data-recording='true'] {
+  border: 2px solid var(--danger);
+}
+
+.recorder[data-recording='true'] .rec-status {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.recorder .actions {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.recorder button {
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
 .hud {
   position: fixed;
   right: 8px;

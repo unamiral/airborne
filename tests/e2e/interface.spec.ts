@@ -149,3 +149,30 @@ test('basic controls fit a narrow window and drawing still works', async ({ page
   await drawWithMouse(page, [[50, 200], [300, 260]]);
   expect(await inkPixels(page)).toBeGreaterThan(50);
 });
+
+test('hand targets are at least 48 CSS px and fully inside the 1280×800 surface (F06, F21)', async ({ page }) => {
+  await open(page);
+  const check = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('[data-hand-target]')]
+        .filter((e) => e.getClientRects().length > 0 && e.closest('[hidden]') === null && (e.closest('dialog') === null || e.closest('dialog')!.open))
+        .map((e) => {
+          const r = e.getBoundingClientRect();
+          return { id: e.dataset.handTarget, w: r.width, h: r.height, inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight };
+        }),
+    );
+  const strip = await check();
+  expect(strip.length).toBeGreaterThanOrEqual(19);
+  for (const t of strip) {
+    expect(t.inside, t.id).toBe(true);
+    expect(Math.min(t.w, t.h), t.id).toBeGreaterThanOrEqual(48);
+  }
+  await page.getByRole('button', { name: 'Clear board…' }).click();
+  for (const t of await check()) expect(Math.min(t.w, t.h), t.id).toBeGreaterThanOrEqual(48);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  for (const t of await check()) {
+    expect(t.inside, t.id).toBe(true);
+    expect(Math.min(t.w, t.h), t.id).toBeGreaterThanOrEqual(48);
+  }
+});

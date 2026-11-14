@@ -19,6 +19,7 @@ import {
 } from '../input/hand-reducer';
 import { applyIntents, surfaceToBoard } from '../input/intents';
 import type { CursorMode, CursorView } from '../render/renderer';
+import { predictOffset, type TimedPoint } from '../signal/prediction';
 import { HandPipeline, type CameraSize, type HandView, type SurfaceLayout } from '../tracking/hand-pipeline';
 import type { HandPayload } from '../tracking/protocol';
 import type { AppConfig } from './config';
@@ -45,6 +46,9 @@ export class HandInput {
   private lost = false;
   private armProgress = 0;
   private blocked = false;
+  /** Recent filtered pen samples of the drawing hand (for visual prediction). */
+  private ownerSamples: TimedPoint[] = [];
+  private ownerStrokeSamples = 0;
   /** Disabled during dev replay, whose timeline already encodes losses. */
   lossCheckEnabled = true;
   /** Main-thread observation time of the newest applied result. */
@@ -122,6 +126,7 @@ export class HandInput {
       if (h.ambiguous) this.deps.metrics.count('identityAmbiguous');
     }
     if (!this.blocked || out.input.kind === 'loss') this.dispatch(out.input);
+    this.trackOwner(sourceTimeMs);
     this.latestObservedAt = observedAt;
     this.pendingDrawObservedAt = observedAt;
     this.deps.metrics.sample('inputMs', this.deps.now() - started);
@@ -174,6 +179,42 @@ export class HandInput {
       });
     }
     this.deps.onStep?.(input, step.intents);
+  }
+
+  private trackOwner(t: number): void {
+    const mode = this.stateValue.mode;
+    const owner = mode.kind === 'drawing' ? this.views.find((h) => h.id === mode.owner) : undefined;
+    if (owner === undefined || !owner.usable) {
+      this.ownerSamples = [];
+      this.ownerStrokeSamples = mode.kind === 'drawing' ? this.ownerStrokeSamples : 0;
+      return;
+    }
+    this.ownerSamples = [...this.ownerSamples.slice(-3), { t, x: owner.pen.x, y: owner.pen.y }];
+    this.ownerStrokeSamples++;
+  }
+
+  /**
+   * Visual-only predicted tip offset (board CSS px) for the drawing hand, or
+   * null. Never used for decisions or stored geometry (plan §8.6).
+   */
+  prediction(now: number, displayWaitMs: number): { dx: number; dy: number } | null {
+    const config = this.deps.config().prediction;
+    if (!config.enabled || this.stateValue.mode.kind !== 'drawing' || this.latestObservedAt === null) return null;
+    const s = this.ownerSamples;
+    const intervals = s.slice(1).map((p, i) => p.t - s[i]!.t).sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)] ?? 33;
+    const offset = predictOffset(
+      {
+        samples: s,
+        strokeSamples: this.ownerStrokeSamples,
+        resultAgeMs: now - this.latestObservedAt,
+        displayWaitMs,
+        medianIntervalMs: median,
+        trustworthy: !this.lost,
+      },
+      config,
+    );
+    return offset.dx === 0 && offset.dy === 0 ? null : offset;
   }
 
   /** Cursors for hands over the board, in board-local CSS px. */

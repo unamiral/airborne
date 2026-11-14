@@ -41,6 +41,15 @@ test('a pinch on a color swatch selects it once; the held pinch never draws (F21
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(0);
 });
 
+test('a control that becomes enabled after startup is reachable by hand (regression)', async ({ page }) => {
+  await open(page);
+  // Undo starts disabled; drawing enables it after the hand layout was first computed.
+  await drawWithMouse(page, [[200, 200], [500, 260]]);
+  const undo = await centre(page, '[data-hand-target="undo"]');
+  await play(page, [hover(300, undo.x, undo.y), pinchAt(250, undo.x, undo.y), hover(250, undo.x, undo.y)]);
+  expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(0);
+});
+
 test('clearing by hand needs a second, separate pinch on the confirmation (F23)', async ({ page }) => {
   await open(page);
   await drawWithMouse(page, [[200, 200], [500, 260]]);
