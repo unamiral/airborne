@@ -20,11 +20,27 @@ export interface OneEuroParams {
   readonly derivativeCutoffHz: number;
 }
 
-/** Starting experiment values from plan §8.3; see docs/signal-report.md. */
-export const STABILIZER_PRESETS: Readonly<Record<StabilizerPreset, OneEuroParams>> = {
+/**
+ * Plan §8.3 seed values (kept for comparison in the signal report).
+ */
+export const SEED_STABILIZER_PRESETS: Readonly<Record<StabilizerPreset, OneEuroParams>> = {
   light: { minCutoffHz: 2.5, beta: 0.03, derivativeCutoffHz: 1.0 },
   balanced: { minCutoffHz: 1.5, beta: 0.02, derivativeCutoffHz: 1.0 },
   steady: { minCutoffHz: 0.8, beta: 0.015, derivativeCutoffHz: 1.0 },
+};
+
+/**
+ * Tuned on the synthetic suite (docs/signal-report.md, ADR 0003): the 1 Hz
+ * derivative cutoff made the speed estimate react too slowly on curves (lag
+ * up to 37 ms, p95 shape error up to 4.9 px at 30 Hz / 1 px noise). With a
+ * 2 Hz derivative cutoff, Balanced meets every Balanced gate on the standard
+ * suite at 30 Hz and also improves held-out traces. Not validated on real
+ * camera traces or by users yet.
+ */
+export const STABILIZER_PRESETS: Readonly<Record<StabilizerPreset, OneEuroParams>> = {
+  light: { minCutoffHz: 3.0, beta: 0.04, derivativeCutoffHz: 2.0 },
+  balanced: { minCutoffHz: 2.0, beta: 0.03, derivativeCutoffHz: 2.0 },
+  steady: { minCutoffHz: 1.0, beta: 0.02, derivativeCutoffHz: 2.0 },
 };
 
 export interface GestureConfig {
@@ -176,7 +192,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   prediction: {
     enabled: false,
     maxHorizonMs: 16,
-    maxDistancePx: 6,
+    // Plan seed 6 px overshot an instantaneous stop by 3.0 px (gate: 3 px);
+    // 5 px keeps the worst synthetic overshoot at 2.5 px. See ADR 0003.
+    maxDistancePx: 5,
   },
   stroke: {
     minSpacingPx: 0.5,
