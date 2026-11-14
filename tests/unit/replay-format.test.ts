@@ -58,6 +58,14 @@ describe('replay record validation (F32)', () => {
     expect(parseReplay(record({ frames: [{ t: 0, ageMs: 1, hands: [hand(), hand(), hand()] }] })).ok).toBe(false);
   });
 
+  it('migrates a version-1 embedded configuration', () => {
+    const { lifecycle: _lifecycle, ...v1 } = { ...DEFAULT_CONFIG, version: 1 };
+    const parsed = parseReplay(record({ configVersion: 1, config: v1 }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.record.config.lifecycle.hiddenStopMs).toBe(30_000);
+    expect(parseReplay(record({ configVersion: 0, config: v1 })).ok).toBe(false);
+  });
+
   it('rejects invalid embedded configuration', () => {
     const parsed = parseReplay(record({ config: { ...DEFAULT_CONFIG, reach: 3 } }));
     expect(parsed.ok).toBe(false);

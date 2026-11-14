@@ -153,6 +153,9 @@ export class BoardRenderer {
     this.visible = ctx;
     const attrs = typeof ctx.getContextAttributes === 'function' ? ctx.getContextAttributes() : null;
     this.desync = attrs?.desynchronized ?? null;
+    // Graphics-context loss: the vector document is canonical, so a restored
+    // context simply gets fresh caches and a full redraw.
+    canvas.addEventListener('contextrestored', () => this.resetCache());
   }
 
   get stats(): RendererStats {

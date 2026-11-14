@@ -11,7 +11,8 @@
   --button-border: #b8bec8;
   --button-pressed: #dbe6fb;
   --target: 48px;
-  --gap: 8px;
+  --gap: 6px;
+  --columns: 3;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
 }
@@ -40,7 +41,7 @@ body {
 /* Reserved control strip outside the ink surface (plan §4). */
 .strip {
   flex: 0 0 auto;
-  width: calc(var(--target) * 2 + var(--gap) * 3);
+  width: calc(var(--target) * var(--columns) + var(--gap) * (var(--columns) + 1));
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -52,9 +53,15 @@ body {
   scrollbar-width: thin;
 }
 
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
 .strip-group {
   display: grid;
-  grid-template-columns: repeat(2, var(--target));
+  grid-template-columns: repeat(var(--columns), var(--target));
   gap: var(--gap);
   margin: 0;
   padding: 0;
@@ -70,7 +77,44 @@ body {
   text-transform: uppercase;
   color: var(--muted);
   padding: 0;
-  margin-bottom: 2px;
+  margin: 0 0 -2px;
+  line-height: 1.2;
+}
+
+.mode-row {
+  display: flex;
+}
+
+.notice {
+  color: var(--text);
+  background: #fff4e5;
+  border: 1px solid #f0c78a;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+.confirm {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+}
+
+.confirm::backdrop {
+  background: rgb(20 22 26 / 0.35);
+}
+
+.primary.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.tool.hand-hover.hand-press {
+  outline-style: solid;
 }
 
 .tool {
@@ -336,6 +380,10 @@ input:focus-visible,
   .strip-group {
     grid-template-columns: repeat(4, var(--target));
     flex: 0 0 auto;
+  }
+
+  .toolbar {
+    flex-direction: row;
   }
 
   .preview,

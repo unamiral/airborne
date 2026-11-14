@@ -7,7 +7,20 @@
  * CONFIG_VERSION plus the full config.
  */
 
-export const CONFIG_VERSION = 1;
+export const CONFIG_VERSION = 2;
+
+/**
+ * Upgrades a configuration recorded with an older CONFIG_VERSION (replay
+ * fixtures and recordings embed their config). Returns the input unchanged
+ * when no migration applies; validateConfig decides whether it is usable.
+ *   v1 → v2: added `lifecycle` (hidden-tab camera stop).
+ */
+export function migrateConfig(version: unknown, config: unknown): unknown {
+  if (version === 1 && typeof config === 'object' && config !== null) {
+    return { ...(config as Record<string, unknown>), version: 2, lifecycle: { hiddenStopMs: 30_000 } };
+  }
+  return config;
+}
 
 export type StabilizerPreset = 'light' | 'balanced' | 'steady';
 
@@ -137,6 +150,11 @@ export interface RenderConfig {
   readonly rebuildChunkMs: number;
 }
 
+export interface LifecycleConfig {
+  /** A tab hidden longer than this stops the camera, ms (plan: 30 s). */
+  readonly hiddenStopMs: number;
+}
+
 export interface CameraConfig {
   readonly idealWidth: number;
   readonly idealHeight: number;
@@ -158,6 +176,7 @@ export interface AppConfig {
   readonly limits: LimitsConfig;
   readonly render: RenderConfig;
   readonly camera: CameraConfig;
+  readonly lifecycle: LifecycleConfig;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -216,6 +235,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     rebuildChunkMs: 4,
   },
   camera: { idealWidth: 640, idealHeight: 480, idealFrameRate: 60 },
+  lifecycle: { hiddenStopMs: 30_000 },
 };
 
 interface NumericSpec {
@@ -238,6 +258,7 @@ export const CONFIG_BOUNDS: {
   readonly limits: SpecFor<LimitsConfig>;
   readonly render: SpecFor<RenderConfig>;
   readonly camera: SpecFor<CameraConfig>;
+  readonly lifecycle: SpecFor<LifecycleConfig>;
 } = {
   root: {
     reach: { min: 0.5, max: 0.9, unit: 'fraction of camera frame' },
@@ -296,6 +317,9 @@ export const CONFIG_BOUNDS: {
     idealHeight: { min: 120, max: 1080, unit: 'px', integer: true },
     idealFrameRate: { min: 10, max: 120, unit: 'fps' },
   },
+  lifecycle: {
+    hiddenStopMs: { min: 100, max: 600_000, unit: 'ms' },
+  },
 };
 
 export type ConfigResult =
@@ -352,6 +376,7 @@ export function validateConfig(candidate: unknown): ConfigResult {
   checkNumbers('limits', candidate.limits, CONFIG_BOUNDS.limits, errors);
   checkNumbers('render', candidate.render, CONFIG_BOUNDS.render, errors);
   checkNumbers('camera', candidate.camera, CONFIG_BOUNDS.camera, errors);
+  checkNumbers('lifecycle', candidate.lifecycle, CONFIG_BOUNDS.lifecycle, errors);
   if (isRecord(candidate.gesture)) {
     checkBoolean('gesture.fistEraseEnabled', candidate.gesture.fistEraseEnabled, errors);
     const g = candidate.gesture;
