@@ -10,6 +10,7 @@ import type { CameraDevice } from '../camera/camera-source';
 import { el, setText } from './dom';
 
 export interface SettingsValues {
+  readonly devtoolsVisible: boolean;
   readonly dark: boolean;
   readonly background: BoardBackground;
   readonly stabilizer: StabilizerPreset;
@@ -23,6 +24,7 @@ export interface SettingsValues {
 }
 
 export interface SettingsHandlers {
+  readonly setDevtoolsVisible: (visible: boolean) => void;
   readonly setBackground: (background: BoardBackground) => void;
   readonly setDark: (dark: boolean) => void;
   readonly setStabilizer: (preset: StabilizerPreset) => void;
@@ -51,6 +53,9 @@ export class SettingsDialog {
   private readonly reachValue: HTMLElement;
   private readonly writeStart: HTMLInputElement;
   private readonly writeRelease: HTMLInputElement;
+  private readonly devtoolsSwitch: HTMLButtonElement;
+  private readonly mainPage: HTMLElement;
+  private readonly advancedPage: HTMLElement;
   private readonly darkSwitch: HTMLButtonElement;
   private readonly fistSwitch: HTMLButtonElement;
   private readonly previewSwitch: HTMLButtonElement;
@@ -102,6 +107,7 @@ export class SettingsDialog {
       this.backgroundButtons.set(id, button);
       backgroundRow.append(button);
     }
+    this.devtoolsSwitch = makeSwitch('devtools-toggle', 'Show developer tools', (v) => handlers.setDevtoolsVisible(v));
     this.darkSwitch = makeSwitch('dark-toggle', 'Dark mode', (v) => handlers.setDark(v));
     this.fistSwitch = makeSwitch('fist-toggle', 'Erase with a held fist', (v) => handlers.setFistErase(v));
     this.previewSwitch = makeSwitch('preview-toggle', 'Show camera preview', (v) => handlers.setPreview(v));
@@ -116,37 +122,50 @@ export class SettingsDialog {
     const close = el('button', { type: 'button', class: 'primary', 'data-hand-target': 'settings-close' }, ['Done']);
     close.addEventListener('click', () => this.close());
 
-    this.element = el('dialog', { class: 'card settings', 'aria-labelledby': 'settings-title' }, [
-      el('h2', { id: 'settings-title' }, ['Settings']),
+    const advancedButton = el('button', { type: 'button', class: 'secondary', 'data-hand-target': 'settings-advanced' }, ['Advanced']);
+    const backButton = el('button', { type: 'button', class: 'secondary', 'data-hand-target': 'settings-back' }, ['Back to settings']);
+    advancedButton.addEventListener('click', () => this.showAdvanced(true));
+    backButton.addEventListener('click', () => this.showAdvanced(false));
+    this.mainPage = el('div', {}, [
       el('div', { class: 'settings-columns' }, [
         el('section', {}, [
-          el('h3', {}, ['Appearance']),
-          this.darkSwitch,
-          el('h3', {}, ['Board background']),
-          backgroundRow,
+          el('h3', {}, ['Appearance']), this.darkSwitch,
+          el('h3', {}, ['Board background']), backgroundRow,
           el('p', { class: 'help' }, ['Live camera uses the active camera; start it from the toolbar. Camera images are not included in exports.']),
           el('h3', {}, ['Gestures and camera']),
           el('div', { class: 'switch-row' }, [this.fistSwitch, this.previewSwitch]),
-          el('label', { for: 'camera-select', class: 'help' }, ['Camera']),
-          this.cameraSelect,
+          el('label', { for: 'camera-select', class: 'help' }, ['Camera']), this.cameraSelect,
         ]),
         el('section', {}, [
-          el('h3', { id: 'stab-label' }, ['Hand steadiness']),
-          presetRow,
+          el('h3', { id: 'stab-label' }, ['Hand steadiness']), presetRow,
           el('h3', {}, [el('label', { for: 'reach-input' }, ['Sensitivity'])]),
           el('p', { id: 'reach-help', class: 'help' }, ['Lower sensitivity gives finer control near the center. The entire camera view remains active.']),
           el('div', { class: 'reach-row' }, [less, this.reachInput, more, this.reachValue]),
-          el('h3', {}, ['Writing gesture']),
-          el('p', { id: 'write-distance-help', class: 'help' }, ['These distances control the close-fingertip gesture. The extended-finger pose uses finger direction. Distances are measured in palm lengths, and release must be higher than start.']),
-          el('div', { class: 'switch-row' }, [
-            el('label', { for: 'write-start' }, ['Start distance ', this.writeStart]),
-            el('label', { for: 'write-release' }, ['Release distance ', this.writeRelease]),
-          ]),
         ]),
       ]),
-      el('div', { class: 'actions' }, [reset, close]),
+      el('div', { class: 'actions' }, [reset, advancedButton, close]),
+    ]);
+    this.advancedPage = el('div', { hidden: true }, [
+      el('h3', {}, ['Writing gesture']),
+      el('p', { id: 'write-distance-help', class: 'help' }, ['These distances control the close-fingertip gesture. The extended-finger pose uses finger direction. Distances are measured in palm lengths, and release must be higher than start.']),
+      el('div', { class: 'switch-row' }, [
+        el('label', { for: 'write-start' }, ['Start distance ', this.writeStart]),
+        el('label', { for: 'write-release' }, ['Release distance ', this.writeRelease]),
+      ]),
+      ...(__DEVTOOLS__ ? [el('h3', {}, ['Developer tools']), this.devtoolsSwitch] : []),
+      el('div', { class: 'actions' }, [backButton]),
+    ]);
+    this.element = el('dialog', { class: 'card settings', 'aria-labelledby': 'settings-title' }, [
+      el('h2', { id: 'settings-title' }, ['Settings']), this.mainPage, this.advancedPage,
     ]);
     this.element.addEventListener('close', () => handlers.onClose());
+  }
+
+  private showAdvanced(advanced: boolean): void {
+    this.mainPage.hidden = advanced;
+    this.advancedPage.hidden = !advanced;
+    const target = this.element.querySelector<HTMLButtonElement>(advanced ? '[data-hand-target="settings-back"]' : '[data-hand-target="settings-advanced"]');
+    target?.focus({ preventScroll: true });
   }
 
   get isOpen(): boolean {
@@ -155,6 +174,7 @@ export class SettingsDialog {
 
   open(values: SettingsValues): void {
     this.update(values);
+    if (!this.element.open) this.showAdvanced(false);
     if (!this.element.open) {
       if (typeof this.element.showModal === 'function') this.element.showModal();
       else this.element.setAttribute('open', '');
@@ -176,6 +196,7 @@ export class SettingsDialog {
     setText(this.reachValue, `${pct}%`);
     this.writeStart.value = String(values.writeStartRatio);
     this.writeRelease.value = String(values.writeReleaseRatio);
+    this.devtoolsSwitch.setAttribute('aria-checked', String(values.devtoolsVisible));
     this.darkSwitch.setAttribute('aria-checked', String(values.dark));
     this.fistSwitch.setAttribute('aria-checked', String(values.fistErase));
     this.previewSwitch.setAttribute('aria-checked', String(values.preview));
@@ -195,6 +216,9 @@ export class SettingsDialog {
   /** Hand activation of a settings target. */
   activate(target: string): boolean {
     if (target === 'settings-close') this.close();
+    else if (target === 'settings-advanced') this.showAdvanced(true);
+    else if (target === 'settings-back') this.showAdvanced(false);
+    else if (target === 'devtools-toggle' && __DEVTOOLS__) this.handlers.setDevtoolsVisible(!(this.values?.devtoolsVisible ?? true));
     else if (target === 'reach-less') this.stepReach(0.05);
     else if (target === 'reach-more') this.stepReach(-0.05);
     else if (target.startsWith('background-')) {

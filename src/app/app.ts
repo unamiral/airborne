@@ -85,6 +85,14 @@ export function createApp(root: HTMLElement): AppHandle {
   const metrics = __DEVTOOLS__ ? new Metrics() : null;
   const sink: MetricsSink = metrics ?? noopMetrics;
   let config: AppConfig = DEFAULT_CONFIG;
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem('air-writing-distance') ?? 'null');
+    if (typeof saved === 'object' && saved !== null && 'start' in saved && 'release' in saved &&
+        typeof saved.start === 'number' && typeof saved.release === 'number') {
+      const restored = patchConfig(config, { gesture: { writeStartRatio: saved.start, writeReleaseRatio: saved.release } });
+      if (restored.ok) config = restored.config;
+    }
+  } catch { /* Missing, invalid, or unavailable storage uses defaults. */ }
   let pendingConfig: AppConfig | null = null;
   const inputScale = inputScaleFromUrl();
   const assets = resolveAssets(document.baseURI);
@@ -144,7 +152,17 @@ export function createApp(root: HTMLElement): AppHandle {
     const saved = localStorage.getItem('air-background') as BoardBackground | null;
     if (saved !== null && saved !== 'camera' && BACKGROUNDS.includes(saved)) background = saved;
   } catch { /* Use plain paper. */ }
+  let devtoolsVisible = true;
+  try { devtoolsVisible = localStorage.getItem('air-devtools-visible') !== 'false'; } catch { /* Use the default. */ }
+  document.documentElement.classList.toggle('hide-devtools', !devtoolsVisible);
+
   const settings = new SettingsDialog({
+    setDevtoolsVisible: (visible) => {
+      devtoolsVisible = visible;
+      document.documentElement.classList.toggle('hide-devtools', !visible);
+      try { localStorage.setItem('air-devtools-visible', String(visible)); } catch { /* The setting still applies for this session. */ }
+      settings.update(settingsValues());
+    },
     setBackground: (value) => {
       background = value;
       renderer.setBackground(value, preview.video);
@@ -421,6 +439,7 @@ export function createApp(root: HTMLElement): AppHandle {
   function settingsValues(): SettingsValues {
     const c = pendingConfig ?? config;
     return {
+      devtoolsVisible,
       dark: document.documentElement.dataset.theme === 'dark',
       background,
       stabilizer: c.stabilizer,
@@ -435,7 +454,15 @@ export function createApp(root: HTMLElement): AppHandle {
   }
 
   function updateSettings(patch: ConfigPatch): void {
-    handle.applyConfig(patch);
+    const result = handle.applyConfig(patch);
+    if (result.ok && (patch.gesture?.writeStartRatio !== undefined || patch.gesture?.writeReleaseRatio !== undefined)) {
+      try {
+        localStorage.setItem('air-writing-distance', JSON.stringify({
+          start: result.config.gesture.writeStartRatio,
+          release: result.config.gesture.writeReleaseRatio,
+        }));
+      } catch { /* Settings still apply for this session. */ }
+    }
     settings.update(settingsValues());
   }
 

@@ -189,3 +189,42 @@ test('hand targets are at least 48 CSS px and fully inside the 1280×800 surface
     expect(Math.min(t.w, t.h), t.id).toBeGreaterThanOrEqual(48);
   }
 });
+
+test('writing distances survive refresh and reset', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByRole('spinbutton', { name: 'Start distance' }).fill('0.38');
+  await dialog.getByRole('spinbutton', { name: 'Start distance' }).press('Tab');
+  await dialog.getByRole('spinbutton', { name: 'Release distance' }).fill('0.61');
+  await dialog.getByRole('spinbutton', { name: 'Release distance' }).press('Tab');
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(dialog.getByRole('spinbutton', { name: 'Start distance' })).toHaveValue('0.38');
+  await expect(dialog.getByRole('spinbutton', { name: 'Release distance' })).toHaveValue('0.61');
+  await dialog.getByRole('button', { name: 'Reset to defaults' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(dialog.getByRole('spinbutton', { name: 'Start distance' })).toHaveValue('0.32');
+  await expect(dialog.getByRole('spinbutton', { name: 'Release distance' })).toHaveValue('0.55');
+});
+
+test('desktop sidebar fits its controls with the camera preview visible', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('./');
+  const dimensions = await page.evaluate(() => {
+    const preview = document.querySelector<HTMLElement>('.preview')!;
+    preview.hidden = false;
+    const strip = document.querySelector<HTMLElement>('.strip')!;
+    const video = preview.querySelector('video')!;
+    const overlay = preview.querySelector('canvas')!;
+    return { scrollHeight: strip.scrollHeight, clientHeight: strip.clientHeight,
+      previewHeight: preview.getBoundingClientRect().height,
+      videoHeight: video.getBoundingClientRect().height,
+      overlayHeight: overlay.getBoundingClientRect().height };
+  });
+  expect(dimensions.scrollHeight).toBeLessThanOrEqual(dimensions.clientHeight);
+  expect(dimensions.previewHeight).toBeGreaterThanOrEqual(90);
+  expect(dimensions.videoHeight).toBe(dimensions.previewHeight);
+  expect(dimensions.overlayHeight).toBe(dimensions.previewHeight);
+});
