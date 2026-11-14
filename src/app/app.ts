@@ -32,6 +32,15 @@ function backendFromUrl(): BackendPreference {
   return 'auto';
 }
 
+/**
+ * Optional input downscale for evaluation (`?inputScale=0.5`). Default 1:
+ * the full camera frame is sent; see docs/performance/m0-backend.md.
+ */
+function inputScaleFromUrl(): number {
+  const value = Number(new URLSearchParams(globalThis.location.search).get('inputScale') ?? '1');
+  return Number.isFinite(value) && value >= 0.25 && value <= 1 ? value : 1;
+}
+
 function createInferenceWorker(): WorkerLike {
   return new Worker(new URL('../tracking/worker/inference.worker.ts', import.meta.url), {
     type: 'module',
@@ -43,6 +52,7 @@ export function createApp(root: HTMLElement): AppHandle {
   const metrics = __DEVTOOLS__ ? new Metrics() : null;
   const sink: MetricsSink = metrics ?? noopMetrics;
   const config = DEFAULT_CONFIG;
+  const inputScale = inputScaleFromUrl();
 
   // --- DOM -----------------------------------------------------------------
   const canvas = el('canvas', {
@@ -154,7 +164,15 @@ export function createApp(root: HTMLElement): AppHandle {
     env: browserMediaEnvironment(),
     camera: () => config.camera,
     video: preview.video,
-    snapshot: () => createImageBitmap(preview.video),
+    snapshot: () => {
+      const video = preview.video;
+      if (inputScale === 1) return createImageBitmap(video);
+      return createImageBitmap(video, {
+        resizeWidth: Math.max(1, Math.round(video.videoWidth * inputScale)),
+        resizeHeight: Math.max(1, Math.round(video.videoHeight * inputScale)),
+        resizeQuality: 'medium',
+      });
+    },
     requestAnimationFrame: (callback) => requestAnimationFrame(callback),
     cancelAnimationFrame: (handle) => cancelAnimationFrame(handle),
     assets: resolveAssets(document.baseURI),

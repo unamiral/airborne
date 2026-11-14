@@ -59,27 +59,39 @@ function setup(video = new FakeVideo()) {
 }
 
 describe('frame admission', () => {
-  it('keeps at most one operation in flight and counts busy skips instead of queueing', async () => {
+  it('keeps one operation in flight, queues no images, and admits the newest skipped frame when free', async () => {
     const s = setup();
     s.scheduler.start(1);
+    s.setNow(0);
     s.video.emitFrame(0.033);
     expect(s.scheduler.busy).toBe(true);
     expect(s.snapshots).toHaveLength(1);
+    s.setNow(33);
     s.video.emitFrame(0.066);
+    s.setNow(66);
     s.video.emitFrame(0.1);
+    // No snapshot while busy; the older waiting frame was superseded.
     expect(s.snapshots).toHaveLength(1);
-    expect(s.metrics.counter('busySkips')).toBe(2);
+    expect(s.metrics.counter('busySkips')).toBe(1);
     s.resolveSnapshot(0);
     await flush();
     expect(s.detects).toHaveLength(1);
+    s.setNow(80);
     s.answer(0);
     await flush();
     expect(s.results).toHaveLength(1);
-    expect(s.scheduler.busy).toBe(false);
-    // The next new frame is admitted; nothing was queued meanwhile.
-    s.video.emitFrame(0.133);
+    // The newest frame (0.1 s) is admitted immediately, keeping its observation time.
     expect(s.snapshots).toHaveLength(2);
-    expect(s.detects[0]!.envelope.seq).toBe(1);
+    expect(s.metrics.counter('deferredAdmissions')).toBe(1);
+    s.resolveSnapshot(1);
+    await flush();
+    expect(s.detects[1]!.envelope.sourceTimeMs).toBeCloseTo(100, 6);
+    expect(s.detects[1]!.envelope.seq).toBe(2);
+    s.answer(1);
+    await flush();
+    expect(s.results[1]!.observedAt).toBe(66);
+    expect(s.scheduler.busy).toBe(false);
+    expect(s.bitmaps.every((b) => b.closed)).toBe(true);
   });
 
   it('never admits a duplicate or reversed source timestamp', async () => {

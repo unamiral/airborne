@@ -6,7 +6,12 @@
  *   Neither path may admit the same source frame twice.
  * - At most one pipeline operation (snapshot + inference) is in flight. Busy
  *   is set before the snapshot starts and cleared on every exit path. Frames
- *   arriving while busy are skipped and counted; nothing is queued.
+ *   arriving while busy are not snapshotted and no images are queued. Only
+ *   the metadata of the newest such frame is kept in a single slot; when the
+ *   operation finishes, that frame (the newest available) is admitted at once
+ *   instead of idling until the next frame callback. A frame replaced in the
+ *   slot by a newer one is counted as a busy skip. Its observation time stays
+ *   the time it was presented, so result age includes the wait.
  * - A stopped/obsolete generation closes any bitmap it still owns and drops
  *   its results.
  */
@@ -59,6 +64,7 @@ export class FrameScheduler<V extends VideoFrameSource> {
   private lastFrameAt = Number.NaN;
   private vfcHandle: number | null = null;
   private rafHandle: number | null = null;
+  private latest: { sourceTimeMs: number; observedAt: number } | null = null;
 
   constructor(private readonly deps: FrameSchedulerDeps<V>) {}
 
@@ -85,6 +91,8 @@ export class FrameScheduler<V extends VideoFrameSource> {
   stop(): void {
     this.running = false;
     this.generation++;
+    if (this.latest !== null) this.deps.metrics.count('busySkips');
+    this.latest = null;
     const video = this.deps.video;
     if (this.vfcHandle !== null) video.cancelVideoFrameCallback?.(this.vfcHandle);
     if (this.rafHandle !== null) this.deps.cancelAnimationFrame(this.rafHandle);
@@ -118,7 +126,6 @@ export class FrameScheduler<V extends VideoFrameSource> {
 
   private onFrame(sourceTimeMs: number, generation: number): void {
     const { deps } = this;
-    const video = deps.video;
     deps.metrics.count('sourceFrames');
     const frameAt = deps.now();
     if (Number.isFinite(this.lastFrameAt)) deps.metrics.sample('sourceIntervalMs', frameAt - this.lastFrameAt);
@@ -128,14 +135,20 @@ export class FrameScheduler<V extends VideoFrameSource> {
       return;
     }
     if (this.busyFlag) {
-      deps.metrics.count('busySkips');
+      if (this.latest !== null) deps.metrics.count('busySkips');
+      this.latest = { sourceTimeMs, observedAt: frameAt };
       return;
     }
+    this.admit(sourceTimeMs, frameAt, generation);
+  }
+
+  private admit(sourceTimeMs: number, observedAt: number, generation: number): void {
+    const { deps } = this;
+    const video = deps.video;
     if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) return;
 
     this.busyFlag = true;
     this.lastSourceMs = sourceTimeMs;
-    const observedAt = frameAt;
     const seq = ++this.seq;
     const epoch = this.epoch;
     deps.metrics.count('admitted');
@@ -184,6 +197,12 @@ export class FrameScheduler<V extends VideoFrameSource> {
       })
       .finally(() => {
         this.busyFlag = false;
+        const latest = this.latest;
+        this.latest = null;
+        if (latest !== null && this.running && generation === this.generation && latest.sourceTimeMs > this.lastSourceMs) {
+          deps.metrics.count('deferredAdmissions');
+          this.admit(latest.sourceTimeMs, latest.observedAt, generation);
+        }
       });
   }
 }

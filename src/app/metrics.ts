@@ -24,6 +24,7 @@ export type CounterName =
   | 'sourceFrames'
   | 'duplicateFrames'
   | 'busySkips'
+  | 'deferredAdmissions'
   | 'admitted'
   | 'accepted'
   | 'staleResults'
