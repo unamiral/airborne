@@ -15,10 +15,10 @@
  * its own clock.
  */
 import { HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { classifyCreateError } from './init-errors';
 import {
   LANDMARK_COUNT,
   PROTOCOL_VERSION,
-  type Delegate,
   type DetectRequest,
   type HandPayload,
   type InitErrorCode,
@@ -104,17 +104,6 @@ async function fetchVerifiedModel(
   return { bytes: new Uint8Array(buffer), fetchMs: fetched - start, verifyMs: performance.now() - fetched };
 }
 
-function classifyCreateError(error: unknown, delegate: Delegate): InitFailure {
-  const text = describe(error);
-  if (/ModuleFactory|wasm|WebAssembly|dynamically imported module|Failed to fetch/i.test(text)) {
-    return new InitFailure('wasm-load', `Tracking runtime failed to load: ${text}`);
-  }
-  if (delegate === 'GPU') {
-    return new InitFailure('delegate', `GPU tracking backend failed to start: ${text}`);
-  }
-  return new InitFailure('unknown', `Tracking failed to start: ${text}`);
-}
-
 async function init(request: InitRequest): Promise<void> {
   if (request.protocol !== PROTOCOL_VERSION) {
     post({ type: 'init-error', code: 'protocol', delegate: request.delegate, message: 'Protocol mismatch.' });
@@ -136,7 +125,8 @@ async function init(request: InitRequest): Promise<void> {
         },
       );
     } catch (error) {
-      throw classifyCreateError(error, request.delegate);
+      const classified = classifyCreateError(describe(error), request.delegate);
+      throw new InitFailure(classified.code, classified.message);
     }
     const createMs = performance.now() - createStart;
 

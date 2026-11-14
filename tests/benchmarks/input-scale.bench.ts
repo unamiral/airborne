@@ -24,7 +24,7 @@ test('input scale experiment', async ({ browser, page }) => {
   test.setTimeout(20 * 60_000);
   const out: Record<string, unknown> = { environment: await describeEnvironment(browser, page) };
   for (const backend of ['gpu', 'cpu']) {
-    for (const scale of [1, 0.5]) {
+    for (const scale of (process.env.BENCH_SCALES ?? '1,0.5').split(',').map(Number)) {
       const ctx = await browser.newContext();
       const p = await ctx.newPage();
       const r = await run(p, backend, scale);
@@ -34,5 +34,5 @@ test('input scale experiment', async ({ browser, page }) => {
       await ctx.close();
     }
   }
-  writeJson('bench-results/m0-input-scale.json', out);
+  writeJson(process.env.BENCH_OUT ?? 'bench-results/m0-input-scale.json', out);
 });

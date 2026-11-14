@@ -1,0 +1,62 @@
+{
+ "date": "2026-11-14T17:25:40.896Z",
+ "rows": [
+  {
+   "file": "assets/mediapipe/1.2.3/vision_wasm_module_internal.wasm",
+   "category": "ml",
+   "bytes": 14665738,
+   "gzip": 4168800,
+   "brotli": 2891319
+  },
+  {
+   "file": "assets/models/hand_landmarker/float16-1/hand_landmarker.task",
+   "category": "ml",
+   "bytes": 7819105,
+   "gzip": 5796145,
+   "brotli": 5371250
+  },
+  {
+   "file": "assets/mediapipe/1.2.3/vision_wasm_module_internal.js",
+   "category": "ml",
+   "bytes": 336662,
+   "gzip": 81181,
+   "brotli": 67153
+  },
+  {
+   "file": "assets/inference.worker-D7o0ec7h.js",
+   "category": "ml",
+   "bytes": 157222,
+   "gzip": 46288,
+   "brotli": 39314
+  },
+  {
+   "file": "assets/index-Co1Kjfvo.js",
+   "category": "shell",
+   "bytes": 30946,
+   "gzip": 10745,
+   "brotli": 9641
+  },
+  {
+   "file": "assets/index-BTFM_s8m.css",
+   "category": "shell",
+   "bytes": 4458,
+   "gzip": 1671,
+   "brotli": 1422
+  },
+  {
+   "file": "index.html",
+   "category": "shell",
+   "bytes": 677,
+   "gzip": 387,
+   "brotli": 243
+  }
+ ],
+ "summary": {
+  "shellGzipKiB": 12.5,
+  "shellBrotliKiB": 11,
+  "mlGzipMiB": 9.62,
+  "mlBrotliMiB": 7.98,
+  "coldCameraGzipMiB": 9.64,
+  "coldCameraBrotliMiB": 7.99
+ }
+}
