@@ -1,22 +1,24 @@
 /**
  * Composition root. Wires camera/tracking, hand input, pointer and keyboard
- * input, the board controller, the renderer, and the UI. UI code dispatches
- * commands and reads summaries; it never edits stroke data.
+ * input, the board controllers (real and practice), the renderer, and the UI.
+ * UI code dispatches commands and reads summaries; it never edits strokes.
  */
 import { BoardController } from '../board/controller';
-import { browserMediaEnvironment } from '../camera/camera-source';
-import type { Rect } from '../core/coords';
+import { browserMediaEnvironment, listCameras, type CameraDevice } from '../camera/camera-source';
 import { attachKeyboard } from '../input/keyboard';
 import { attachPointerInput } from '../input/pointer-input';
+import { ExportError, downloadBlob, exportFileName, renderPng } from '../render/export';
 import { BoardRenderer } from '../render/renderer';
-import { regionFromLayout, type SurfaceLayout } from '../tracking/hand-pipeline';
+import type { SurfaceLayout } from '../tracking/hand-pipeline';
 import type { HandPayload } from '../tracking/protocol';
 import type { BackendPreference, WorkerLike } from '../tracking/tracker-client';
 import { Announcer } from '../ui/announcer';
 import { CameraPanel } from '../ui/camera-panel';
 import { ConfirmDialog } from '../ui/dialogs';
 import { el, setText } from '../ui/dom';
+import { computeSurfaceLayout } from '../ui/layout';
 import { CameraPreview } from '../ui/preview';
+import { SettingsDialog, type SettingsValues } from '../ui/settings';
 import { Toolbar, commandForTarget, type Command } from '../ui/toolbar';
 import { resolveAssets, type ResolvedAssets } from './assets';
 import { CameraSession, type SessionState } from './camera-session';
@@ -24,13 +26,18 @@ import { DEFAULT_CONFIG, patchConfig, type AppConfig, type ConfigResult } from '
 import { HandInput } from './hand-input';
 import { watchInterruptions } from './interruptions';
 import { Metrics, noopMetrics, type MetricsSink } from './metrics';
+import { PracticeSession } from './practice';
 
 type ConfigPatch = Parameters<typeof patchConfig>[1];
 
 export interface AppHandle {
   readonly metrics: Metrics | null;
   readonly session: CameraSession;
+  /** The real board (never the practice board). */
   readonly controller: BoardController;
+  /** The board input currently edits (real or practice). */
+  readonly activeBoard: () => BoardController;
+  readonly practice: PracticeSession;
   readonly renderer: BoardRenderer;
   readonly hands: HandInput;
   readonly config: () => AppConfig;
@@ -75,6 +82,7 @@ export function createApp(root: HTMLElement): AppHandle {
   let pendingConfig: AppConfig | null = null;
   const inputScale = inputScaleFromUrl();
   const assets = resolveAssets(document.baseURI);
+  const env = browserMediaEnvironment();
 
   // --- DOM -----------------------------------------------------------------
   const canvas = el('canvas', {
@@ -83,11 +91,18 @@ export function createApp(root: HTMLElement): AppHandle {
     'aria-label': 'Whiteboard. Drag to draw, hold Space and drag to pan, scroll to zoom. Shortcuts: Z undo, Shift+Z redo, C clear, P pause.',
   });
   const preview = new CameraPreview();
+  let previewWanted = true;
   const announcer = new Announcer();
   const modeChip = el('span', { class: 'mode-chip', 'aria-hidden': 'true' }, ['Camera off']);
   const notice = el('p', { class: 'status notice', hidden: true });
   let welcome: HTMLElement | null = null;
   let sessionState: SessionState = { kind: 'idle' };
+  let cameras: CameraDevice[] = [];
+
+  const showNotice = (text: string): void => {
+    notice.hidden = false;
+    setText(notice, text);
+  };
 
   const panel = new CameraPanel({
     onStart: () => {
@@ -111,7 +126,30 @@ export function createApp(root: HTMLElement): AppHandle {
     confirmTarget: 'clear-confirm',
     cancelTarget: 'clear-cancel',
     onConfirm: () => {
-      if (controller.clear()) announcer.announce('Board cleared. Undo is available.');
+      if (activeBoard.clear()) announcer.announce('Board cleared. Undo is available.');
+    },
+    onClose: () => {
+      relayout();
+      canvas.focus({ preventScroll: true });
+    },
+  });
+  const settings = new SettingsDialog({
+    setStabilizer: (stabilizer) => updateSettings({ stabilizer }),
+    setReach: (reach) => updateSettings({ reach }),
+    setFistErase: (fistEraseEnabled) => updateSettings({ gesture: { fistEraseEnabled } }),
+    setPreview: (visible) => {
+      previewWanted = visible;
+      preview.setVisible(visible);
+      settings.update(settingsValues());
+    },
+    setCamera: (deviceId) => {
+      void session.switchDevice(deviceId);
+    },
+    resetDefaults: () => {
+      updateSettings({ stabilizer: DEFAULT_CONFIG.stabilizer, reach: DEFAULT_CONFIG.reach, gesture: { fistEraseEnabled: true } });
+      previewWanted = true;
+      preview.setVisible(true);
+      settings.update(settingsValues());
     },
     onClose: () => {
       relayout();
@@ -128,7 +166,7 @@ export function createApp(root: HTMLElement): AppHandle {
     preview.element,
   ]);
   const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard]);
-  root.append(strip, boardWrap, clearDialog.element, announcer.element);
+  root.append(strip, boardWrap, clearDialog.element, settings.element, announcer.element);
   welcome = buildWelcome();
   boardWrap.append(welcome);
 
@@ -157,19 +195,39 @@ export function createApp(root: HTMLElement): AppHandle {
   function dismissWelcome(): void {
     welcome?.remove();
     welcome = null;
+    relayout();
   }
 
-  // --- Board, renderer, input -------------------------------------------------
+  // --- Boards, renderer --------------------------------------------------------
   const controller = new BoardController(config);
+  let activeBoard: BoardController = controller;
   const renderer = new BoardRenderer(canvas, config.render, sink);
   renderer.attach(controller);
-  controller.onChange((kind) => {
-    if (kind === 'style' || kind === 'history' || kind === 'doc') syncToolbar();
-    if (kind === 'limit' && controller.limitReached) {
-      notice.hidden = false;
-      setText(notice, 'The board is full. Export it or clear it to keep writing; your work is kept.');
-    }
+  const observeBoard = (board: BoardController): void => {
+    board.onChange((kind) => {
+      if (board !== activeBoard) return;
+      if (kind === 'style' || kind === 'history' || kind === 'doc') syncToolbar();
+      if (kind === 'limit' && board.limitReached) showNotice('The board is full. Export it or clear it to keep writing; your work is kept.');
+    });
+  };
+  observeBoard(controller);
+
+  const practice = new PracticeSession({
+    config: () => config,
+    mainBoard: controller,
+    boardCenter: () => ({ x: layoutValue.board.width / 2, y: layoutValue.board.height / 2 }),
+    usingHands: () => sessionState.kind === 'ready',
+    now: () => performance.now(),
+    setActiveBoard: (board) => {
+      activeBoard.closeTransientWork();
+      activeBoard = board;
+      if (board !== controller) observeBoard(board);
+      renderer.setBoard(board);
+      syncToolbar();
+    },
+    onChange: () => relayout(),
   });
+  boardWrap.append(practice.card.element, practice.offer.element);
 
   let lastFrameAt: number | null = null;
   renderer.onFrame = (duration) => {
@@ -187,7 +245,7 @@ export function createApp(root: HTMLElement): AppHandle {
 
   const hands = new HandInput({
     config: () => config,
-    controller: () => controller,
+    controller: () => activeBoard,
     activateControl: (id) => activateTarget(id),
     metrics: sink,
     now: () => performance.now(),
@@ -204,75 +262,101 @@ export function createApp(root: HTMLElement): AppHandle {
       clearDialog.activate(id);
       return;
     }
+    if (settings.isOpen) {
+      settings.activate(id);
+      return;
+    }
+    if (practice.activate(id)) return;
     const command = commandForTarget(id);
     if (command !== null) runCommand(command);
   }
 
   function runCommand(command: Command): void {
+    const board = activeBoard;
     switch (command.kind) {
       case 'tool':
-        controller.setTool(command.tool);
+        board.setTool(command.tool);
         break;
       case 'color':
-        controller.setColor(command.value);
+        board.setColor(command.value);
         break;
       case 'width':
-        controller.setWidth(command.px);
+        board.setWidth(command.px);
         break;
       case 'undo':
-        if (controller.undo()) announcer.announce('Undo');
+        if (board.undo()) announcer.announce('Undo');
         break;
       case 'redo':
-        if (controller.redo()) announcer.announce('Redo');
+        if (board.redo()) announcer.announce('Redo');
         break;
       case 'clear':
-        controller.closeTransientWork();
+        board.closeTransientWork();
         clearDialog.open();
         relayout();
         break;
       case 'fit':
-        controller.fit(layoutValue.board.width, layoutValue.board.height);
+        board.fit(layoutValue.board.width, layoutValue.board.height);
         break;
       case 'reset':
-        controller.resetView();
+        board.resetView();
         break;
       case 'pause':
         togglePause();
         break;
       case 'export':
+        void exportPng();
+        break;
       case 'settings':
+        settings.open(settingsValues());
+        relayout();
+        break;
       case 'help':
-        // Implemented in M4.
+        if (practice.active) practice.stop();
+        else practice.start();
         break;
     }
     syncToolbar();
   }
 
+  async function exportPng(): Promise<void> {
+    const r = renderer.stats;
+    try {
+      const blob = await renderPng(activeBoard, r.cssWidth, r.cssHeight, r.rasterScale);
+      downloadBlob(blob, exportFileName(new Date()));
+      announcer.announce('Exported the visible board as a PNG image.');
+    } catch (error) {
+      const message = error instanceof ExportError ? error.message : 'Export failed.';
+      showNotice(`${message} Your board is unchanged.`);
+    }
+  }
+
+  function settingsValues(): SettingsValues {
+    const c = pendingConfig ?? config;
+    return {
+      stabilizer: c.stabilizer,
+      reach: c.reach,
+      fistErase: c.gesture.fistEraseEnabled,
+      preview: previewWanted,
+      cameras,
+      cameraId: session.details.camera?.deviceId ?? null,
+    };
+  }
+
+  function updateSettings(patch: ConfigPatch): void {
+    handle.applyConfig(patch);
+    settings.update(settingsValues());
+  }
+
   function syncToolbar(): void {
-    toolbar.sync(controller, hands.state.paused);
-    canvas.dataset.tool = controller.tool;
+    toolbar.sync(activeBoard, hands.state.paused);
+    canvas.dataset.tool = activeBoard.tool;
   }
 
   let layoutValue: SurfaceLayout = computeLayout();
-  function relative(r: DOMRect, origin: DOMRect): Rect {
-    return { x: r.left - origin.left, y: r.top - origin.top, width: r.width, height: r.height };
-  }
   function computeLayout(): SurfaceLayout {
-    const rootRect = root.getBoundingClientRect();
-    const boardRect = relative(canvas.getBoundingClientRect(), rootRect);
-    // A modal dialog owns hand input: only its controls are targets, and the
-    // rest of the surface absorbs pinches instead of drawing underneath.
-    const scope: ParentNode = clearDialog.isOpen ? clearDialog.element : strip;
-    const controls = [...scope.querySelectorAll<HTMLElement>('[data-hand-target]')]
-      .filter((node) => node.getClientRects().length > 0 && !node.hasAttribute('disabled'))
-      .map((node) => ({ id: node.dataset.handTarget ?? '', rect: relative(node.getBoundingClientRect(), rootRect) }));
-    const hitBoard = clearDialog.isOpen ? { x: 0, y: 0, width: 0, height: 0 } : boardRect;
-    return {
-      width: rootRect.width,
-      height: rootRect.height,
-      board: boardRect,
-      hitTest: regionFromLayout(hitBoard, controls, rootRect.width, rootRect.height),
-    };
+    const modal = clearDialog.isOpen ? clearDialog.element : settings.isOpen ? settings.element : null;
+    const overlays = [practice.card.element, practice.offer.element, panel.errorCard, ...(welcome !== null ? [welcome] : [])];
+    return computeSurfaceLayout(root, canvas, modal, overlays);
   }
   function relayout(): void {
     layoutValue = computeLayout();
@@ -299,9 +383,9 @@ export function createApp(root: HTMLElement): AppHandle {
   let spaceHeld = false;
   let pointerActive = false;
   attachPointerInput(canvas, {
-    controller: () => controller,
+    controller: () => activeBoard,
     spaceHeld: () => spaceHeld,
-    canStart: () => hands.idle && !clearDialog.isOpen,
+    canStart: () => hands.idle && !clearDialog.isOpen && !settings.isOpen,
     onUse: () => dismissWelcome(),
   });
   canvas.addEventListener('pointerdown', () => {
@@ -318,7 +402,7 @@ export function createApp(root: HTMLElement): AppHandle {
   canvas.addEventListener('lostpointercapture', endPointer);
 
   function pause(reason: 'pause' | 'blur' | 'hidden' | 'escape'): void {
-    controller.closeTransientWork();
+    activeBoard.closeTransientWork();
     if (!hands.state.paused) {
       hands.interrupt(reason, true);
       announcer.announce('Paused');
@@ -358,13 +442,12 @@ export function createApp(root: HTMLElement): AppHandle {
       // Startup prompts may blur the window; only an active session pauses.
       const k = sessionState.kind;
       if (k === 'ready' || k === 'warming' || k === 'paused') pause(reason);
-      else controller.closeTransientWork();
+      else activeBoard.closeTransientWork();
     },
     hiddenTooLong: () => {
       if (!session.active) return;
       session.stop();
-      notice.hidden = false;
-      setText(notice, 'The camera was turned off because the tab was hidden. Start the camera again to continue.');
+      showNotice('The camera was turned off because the tab was hidden. Start the camera again to continue.');
     },
     pageHide: () => session.stop(),
   });
@@ -382,12 +465,13 @@ export function createApp(root: HTMLElement): AppHandle {
     config = pendingConfig;
     pendingConfig = null;
     controller.setConfig(config);
+    if (activeBoard !== controller) activeBoard.setConfig(config);
     hands.setConfig(config);
   }
 
   // --- Camera + tracking -----------------------------------------------------
   const session = new CameraSession({
-    env: browserMediaEnvironment(),
+    env,
     camera: () => config.camera,
     video: preview.video,
     snapshot: () => {
@@ -414,7 +498,14 @@ export function createApp(root: HTMLElement): AppHandle {
         hands.reset();
         if (hands.state.paused) hands.resume();
       }
-      if (state.kind === 'ready') announcer.announce('Camera ready. Pinch to draw.');
+      if (state.kind === 'ready') {
+        announcer.announce('Camera ready. Pinch to draw.');
+        practice.offerOnce();
+        void listCameras(env).then((list) => {
+          cameras = list;
+          if (settings.isOpen) settings.update(settingsValues());
+        });
+      }
       panel.render(state, handle.lastHands.length > 0);
       refreshMode();
       syncToolbar();
@@ -448,6 +539,8 @@ export function createApp(root: HTMLElement): AppHandle {
     metrics,
     session,
     controller,
+    activeBoard: () => activeBoard,
+    practice,
     renderer,
     hands,
     config: () => config,

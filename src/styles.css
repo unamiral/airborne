@@ -108,6 +108,139 @@ body {
   background: rgb(20 22 26 / 0.35);
 }
 
+.settings {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.settings::backdrop {
+  background: rgb(20 22 26 / 0.35);
+}
+
+.settings h3 {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+
+.help {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.choice-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+}
+
+.choice {
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice strong {
+  font-size: 14px;
+}
+
+.choice[aria-pressed='true'],
+.switch[aria-checked='true'] {
+  background: var(--button-pressed);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.reach-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.reach-row input {
+  flex: 1 1 auto;
+}
+
+.reach-row output {
+  font-size: 12px;
+  min-width: 9em;
+}
+
+.small {
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0;
+  font-size: 20px;
+}
+
+.switch-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+  margin-bottom: 8px;
+}
+
+.switch {
+  min-height: var(--target);
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.switch[aria-checked='true']::before {
+  content: '✓ ';
+}
+
+.settings select {
+  min-height: 40px;
+  width: 100%;
+  font: inherit;
+}
+
+.practice {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(460px, calc(100% - 32px));
+  padding: 14px 18px;
+}
+
+.practice-steps {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.practice-steps li {
+  margin: 2px 0;
+}
+
+.practice-steps li[data-state='current'] {
+  font-weight: 700;
+}
+
+.practice-steps li[data-state='done'] {
+  color: var(--muted);
+}
+
 .primary.danger {
   background: var(--danger);
   border-color: var(--danger);

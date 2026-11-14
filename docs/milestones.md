@@ -170,3 +170,37 @@ hidden tab, pagehide, track end, worker crash) wired into hand input.
 ### Next step
 M4: settings (stabilizer, reach, camera, preview, fist gesture), guided
 practice, PNG export, accessibility pass.
+
+## M4 — Complete usable interface (branch `m4-interface`)
+
+### Completed
+- PNG export of the current viewport (dedicated surface at the visible raster
+  size, white background, committed ink plus a confirmed active stroke, no
+  overlays; encoder failures reported; object URLs revoked).
+- Settings dialog: steadiness presets with plain-language help, reach slider
+  with hand-sized ± buttons, fist-gesture and preview switches, camera
+  selection after permission, reset to defaults; changes apply at the next
+  idle boundary through the validated config path.
+- Guided practice on a separate board (draw ≥ 40 px, pan ≥ 40 px, zoom ≥ 15%,
+  erase the loop), with checkmarks and text "done", skip/finish, offered once
+  when the camera first becomes ready, replayable from Help; completion time
+  recorded.
+- Hand routing for dialogs and overlays: a modal dialog scopes hand input to
+  its controls; cards over the board absorb pinches.
+- Accessibility basics: accessible names on every control, pressed/checked
+  states, visible focus, keyboard traversal to the board, a single status
+  landmark plus a rate-limited polite live region, reduced-motion CSS.
+
+### Checks run
+- Vitest: 232 tests (adds practice tracker and export unit tests).
+- Playwright: 44 tests (adds export, settings, accessibility, narrow window,
+  practice, idle-boundary settings, preview toggle with inference running).
+
+### Failures and unmeasured
+- Not done: new-user practice trial (target: 4 of 5 complete within 30 s),
+  screen-reader walkthrough with real assistive technology, contrast audit
+  beyond the palette and button text.
+
+### Next step
+M5: debug recording, privacy/storage/offline checks, resource cycles and soak,
+deployment headers, demo replay, README and requirement-to-test map.

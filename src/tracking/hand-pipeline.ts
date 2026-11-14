@@ -57,14 +57,24 @@ interface TrackState {
   lastPen: SurfacePoint | null;
 }
 
-export function regionFromLayout(board: Rect, controls: ReadonlyArray<{ id: string; rect: Rect }>, width: number, height: number) {
+/**
+ * Region routing: controls first, then overlays that absorb pinches (cards
+ * drawn over the board), then the board, then the rest of the surface.
+ */
+export function regionFromLayout(
+  board: Rect,
+  controls: ReadonlyArray<{ id: string; rect: Rect }>,
+  width: number,
+  height: number,
+  absorbers: readonly Rect[] = [],
+) {
+  const inside = (r: Rect, p: SurfacePoint): boolean => p.x >= r.x && p.y >= r.y && p.x < r.x + r.width && p.y < r.y + r.height;
   return (p: SurfacePoint): Region => {
     for (const c of controls) {
-      if (p.x >= c.rect.x && p.y >= c.rect.y && p.x < c.rect.x + c.rect.width && p.y < c.rect.y + c.rect.height) {
-        return { kind: 'control', id: c.id };
-      }
+      if (inside(c.rect, p)) return { kind: 'control', id: c.id };
     }
-    if (p.x >= board.x && p.y >= board.y && p.x < board.x + board.width && p.y < board.y + board.height) return { kind: 'board' };
+    if (absorbers.some((r) => inside(r, p))) return { kind: 'strip' };
+    if (inside(board, p)) return { kind: 'board' };
     if (p.x >= 0 && p.y >= 0 && p.x < width && p.y < height) return { kind: 'strip' };
     return { kind: 'outside' };
   };
