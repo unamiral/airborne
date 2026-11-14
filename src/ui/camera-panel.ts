@@ -45,14 +45,21 @@ export class CameraPanel {
   private readonly errorTitle: HTMLElement;
   private readonly errorHelp: HTMLElement;
   private readonly errorDetail: HTMLElement;
+  private running = false;
 
   constructor(handlers: CameraPanelHandlers) {
-    this.startButton = el('button', { type: 'button', class: 'primary wide', 'data-hand-target': 'camera-start' }, [
+    // The main button never turns into Cancel in place: a double-click on
+    // Start must not cancel the start it just began. While starting it is
+    // disabled ("Starting…"); Cancel is a separate button below it.
+    this.startButton = el('button', { type: 'button', class: 'primary wide', 'data-hand-target': 'camera-toggle' }, [
       'Start camera',
     ]);
-    this.stopButton = el('button', { type: 'button', class: 'secondary wide', hidden: true }, ['Stop camera']);
+    this.stopButton = el('button', { type: 'button', class: 'secondary wide', hidden: true }, ['Cancel']);
     this.status = el('p', { class: 'status', role: 'status' });
-    this.startButton.addEventListener('click', handlers.onStart);
+    this.startButton.addEventListener('click', () => {
+      if (this.running) handlers.onStop();
+      else handlers.onStart();
+    });
     this.stopButton.addEventListener('click', handlers.onStop);
     this.element = el('div', { class: 'strip-group camera-group' }, [this.startButton, this.stopButton]);
 
@@ -76,11 +83,15 @@ export class CameraPanel {
   }
 
   render(state: SessionState, handVisible: boolean): void {
-    const active = state.kind !== 'idle' && state.kind !== 'failed';
-    this.startButton.hidden = active;
-    this.stopButton.hidden = !active;
-    const starting = state.kind === 'requesting-camera' || state.kind === 'loading-model';
-    setText(this.stopButton, starting ? 'Cancel' : 'Stop camera');
+    const starting =
+      state.kind === 'requesting-camera' ||
+      state.kind === 'loading-model' ||
+      state.kind === 'warming' ||
+      state.kind === 'recovering';
+    this.running = state.kind === 'ready' || state.kind === 'paused';
+    this.startButton.disabled = starting;
+    setText(this.startButton, starting ? 'Starting…' : this.running ? 'Stop camera' : 'Start camera');
+    this.stopButton.hidden = !starting;
     setText(this.status, statusText(state, handVisible));
     if (state.kind === 'failed') this.showError(state.failure);
     else this.hideError();

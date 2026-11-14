@@ -67,10 +67,21 @@ export interface SessionInfo {
   readonly epoch: number;
 }
 
+/** The parts of HTMLVideoElement the session uses; tests substitute a fake. */
+export interface SessionVideo extends VideoFrameSource {
+  srcObject: MediaProvider | null;
+  muted: boolean;
+  playsInline: boolean;
+  play(): Promise<void>;
+}
+
 export interface SessionDeps {
   readonly env: MediaEnvironment;
   readonly camera: () => CameraConfig;
-  readonly video: HTMLVideoElement;
+  readonly video: SessionVideo;
+  readonly snapshot: (video: SessionVideo) => Promise<ImageBitmap>;
+  readonly requestAnimationFrame: (callback: () => void) => number;
+  readonly cancelAnimationFrame: (handle: number) => void;
   readonly assets: ResolvedAssets;
   readonly backend: BackendPreference;
   readonly createWorker: () => WorkerLike;
@@ -145,7 +156,7 @@ export class CameraSession {
   private epoch = 0;
   private stream: MediaStream | null = null;
   private tracker: TrackerClient | null = null;
-  private scheduler: FrameScheduler<HTMLVideoElement & VideoFrameSource> | null = null;
+  private scheduler: FrameScheduler<SessionVideo> | null = null;
   private abort: AbortController | null = null;
   private recoveries: number[] = [];
   private startPressedAt: number | null = null;
@@ -197,21 +208,30 @@ export class CameraSession {
     this.setState({ kind: 'requesting-camera', modelLoading: true });
 
     // Model loading runs in parallel with the permission prompt; both are
-    // owned by this generation and released if it becomes obsolete.
+    // owned by this generation and released if it becomes obsolete. The
+    // tracker may already be ready when the start is abandoned, so aborting
+    // alone is not enough: a resolved tracker must be disposed too.
     const trackerPromise = this.createTracker(abort.signal);
     trackerPromise.catch(() => undefined);
+    const releaseTracker = (): void => {
+      abort.abort();
+      void trackerPromise.then(
+        (t) => t.dispose(),
+        () => undefined,
+      );
+    };
     let stream: MediaStream;
     try {
       stream = await openCamera(this.deps.env, this.deps.camera(), deviceId);
     } catch (error) {
+      releaseTracker();
       if (generation !== this.generation) return;
-      abort.abort();
-      void trackerPromise.then((t) => t.dispose(), () => undefined);
       this.setState({ kind: 'failed', failure: failureFromCamera(error) });
       return;
     }
     if (generation !== this.generation) {
       stopStream(stream);
+      releaseTracker();
       return;
     }
     this.streamAt = this.deps.now();
@@ -249,7 +269,7 @@ export class CameraSession {
       backend: this.deps.backend,
       initTimeoutMs: 45_000,
       detectTimeoutMs: 2_000,
-      warmupFrames: 3,
+      warmupFrames: 5,
       signal,
     });
   }
@@ -270,13 +290,13 @@ export class CameraSession {
     const tracker2 = tracker;
     this.scheduler = new FrameScheduler({
       video: this.deps.video,
-      snapshot: (video) => createImageBitmap(video),
+      snapshot: this.deps.snapshot,
       detect: (envelope) => tracker2.detect(envelope),
       onResult: (admitted) => this.onResult(admitted),
       onFailure: (error) => this.onDetectFailure(error),
       now: this.deps.now,
-      requestAnimationFrame: (cb) => requestAnimationFrame(cb),
-      cancelAnimationFrame: (h) => cancelAnimationFrame(h),
+      requestAnimationFrame: this.deps.requestAnimationFrame,
+      cancelAnimationFrame: this.deps.cancelAnimationFrame,
       metrics: this.deps.metrics,
     });
   }

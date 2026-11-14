@@ -271,20 +271,64 @@ function attempt(options: TrackerOptions, delegate: Delegate): Promise<Attempt> 
 
 const RETRY_ON_CPU: ReadonlySet<string> = new Set(['delegate', 'unknown', 'crash', 'timeout']);
 
-/** Starts a ready tracker, preferring GPU when `backend` is 'auto'. */
+/**
+ * Warm-up frames slower than this (median, excluding the first frame, which
+ * includes shader compilation) indicate a GPU delegate running on a software
+ * rasterizer such as SwiftShader. Measured in M0: Metal GPU ~11 ms, CPU/WASM
+ * ~25 ms, SwiftShader GPU ~115 ms per blank 256x256 frame on an Apple M2.
+ */
+export const SLOW_WARMUP_MS = 50;
+
+/** Median of warm-up durations after the first (compile) frame. */
+export function steadyWarmupMs(timings: InitTimings): number {
+  const steady = timings.warmupMs.slice(1).sort((a, b) => a - b);
+  if (steady.length === 0) return timings.warmupMs[0] ?? Number.POSITIVE_INFINITY;
+  const mid = steady.length >> 1;
+  return steady.length % 2 === 1 ? steady[mid]! : (steady[mid - 1]! + steady[mid]!) / 2;
+}
+
+/**
+ * Starts a ready tracker. With 'auto', GPU is tried first; if it fails, or
+ * initializes but warms up slower than SLOW_WARMUP_MS, a CPU worker is
+ * started and the faster of the two is kept (the other is terminated).
+ */
 export async function startTracker(options: TrackerOptions): Promise<TrackerClient> {
   const order: Delegate[] = options.backend === 'auto' ? ['GPU', 'CPU'] : [options.backend];
   const attempts: string[] = [];
   let last: Attempt | null = null;
+  let slowGpu: Extract<Attempt, { ok: true }> | null = null;
   for (const delegate of order) {
     const result = await attempt(options, delegate);
     if (result.ok) {
+      const warm = steadyWarmupMs(result.timings);
+      if (delegate === 'GPU' && options.backend === 'auto' && warm > SLOW_WARMUP_MS) {
+        slowGpu = result;
+        attempts.push(`GPU: warm-up ${warm.toFixed(0)} ms/frame exceeds ${SLOW_WARMUP_MS} ms (likely software rendering)`);
+        continue;
+      }
+      if (slowGpu !== null) {
+        const gpuWarm = steadyWarmupMs(slowGpu.timings);
+        if (gpuWarm < warm) {
+          result.worker.terminate();
+          attempts.push(`CPU: warm-up ${warm.toFixed(0)} ms/frame is slower; keeping GPU`);
+          return new TrackerClient(slowGpu.worker, 'GPU', slowGpu.timings, options.detectTimeoutMs, attempts.join('; '));
+        }
+        slowGpu.worker.terminate();
+      }
       const fallbackReason = attempts.length > 0 ? attempts.join('; ') : null;
       return new TrackerClient(result.worker, delegate, result.timings, options.detectTimeoutMs, fallbackReason);
     }
     attempts.push(`${delegate}: ${result.code}: ${result.message}`);
     last = result;
     if (result.code === 'aborted' || !RETRY_ON_CPU.has(result.code)) break;
+  }
+  if (slowGpu !== null) {
+    if (last !== null && !last.ok && last.code === 'aborted') {
+      slowGpu.worker.terminate();
+    } else {
+      // CPU failed; a slow GPU is still better than no tracking.
+      return new TrackerClient(slowGpu.worker, 'GPU', slowGpu.timings, options.detectTimeoutMs, attempts.join('; '));
+    }
   }
   const code = last !== null && !last.ok ? last.code : 'unknown';
   const message = last !== null && !last.ok ? last.message : 'Tracking failed to start.';
