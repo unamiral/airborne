@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONFIG_BOUNDS,
   DEFAULT_CONFIG,
+  SEED_STABILIZER_PRESETS,
   STABILIZER_PRESETS,
   patchConfig,
   validateConfig,
@@ -27,7 +28,10 @@ describe('configuration validation', () => {
     expect(g.reconnectDistancePx).toBe(8);
     expect(g.staleResultMs).toBe(100);
     expect(DEFAULT_CONFIG.view).toEqual({ minScale: 0.1, maxScale: 10 });
-    expect(STABILIZER_PRESETS.balanced).toEqual({ minCutoffHz: 1.5, beta: 0.02, derivativeCutoffHz: 1 });
+    expect(SEED_STABILIZER_PRESETS.balanced).toEqual({ minCutoffHz: 1.5, beta: 0.02, derivativeCutoffHz: 1 });
+    // Tuned presets keep their ordering: more smoothing means a lower cutoff.
+    expect(STABILIZER_PRESETS.light.minCutoffHz).toBeGreaterThan(STABILIZER_PRESETS.balanced.minCutoffHz);
+    expect(STABILIZER_PRESETS.balanced.minCutoffHz).toBeGreaterThan(STABILIZER_PRESETS.steady.minCutoffHz);
   });
 
   it('documents a unit and finite bounds for every numeric parameter', () => {

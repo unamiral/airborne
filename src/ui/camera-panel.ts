@@ -51,7 +51,7 @@ export class CameraPanel {
     // The main button never turns into Cancel in place: a double-click on
     // Start must not cancel the start it just began. While starting it is
     // disabled ("Starting…"); Cancel is a separate button below it.
-    this.startButton = el('button', { type: 'button', class: 'primary wide', 'data-hand-target': 'camera-toggle' }, [
+    this.startButton = el('button', { type: 'button', class: 'primary wide' }, [
       'Start camera',
     ]);
     this.stopButton = el('button', { type: 'button', class: 'secondary wide', hidden: true }, ['Cancel']);

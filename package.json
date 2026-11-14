@@ -21,7 +21,9 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && npm run build:bench && playwright test",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e",
-    "test:e2e:only": "playwright test"
+    "test:e2e:only": "playwright test",
+    "report:signal": "vitest run --config vitest.report.config.ts signal",
+    "report:size": "node scripts/size-report.mjs dist"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.3"

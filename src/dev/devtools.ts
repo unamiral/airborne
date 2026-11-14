@@ -22,7 +22,11 @@ const SERIES: ReadonlyArray<[SeriesName, string]> = [
   ['snapshotMs', 'bitmap snapshot'],
   ['resultAgeMs', 'result age'],
   ['drawSubmitMs', 'obs→draw submit'],
+  ['inputMs', 'input math+reducer'],
+  ['inputMs', 'input math+reducer'],
   ['renderMs', 'render'],
+  ['frameWorkMs', 'frame work'],
+  ['frameWorkMs', 'frame work'],
 ];
 
 function fmt(n: number): string {
@@ -46,7 +50,7 @@ export function installDevtools(app: AppHandle): void {
       `frames src ${metrics.counter('sourceFrames')} adm ${metrics.counter('admitted')} ok ${metrics.counter('accepted')}`,
       `skip busy ${metrics.counter('busySkips')} dup ${metrics.counter('duplicateFrames')} stale ${metrics.counter('staleResults')}`,
       `errors det ${metrics.counter('detectErrors')} timeout ${metrics.counter('timeouts')}`,
-      `hands ${app.lastHands.length}  strokes ${app.board.strokes.length}`,
+      `hands ${app.lastHands.length}  mode ${app.hands.label}  strokes ${app.controller.stats.strokes} pts ${app.controller.stats.points}`,
     ];
     for (const [name, label] of SERIES) {
       const s = metrics.summary(name);

@@ -1,27 +1,36 @@
 /**
- * Composition root (M0 slice): pointer-only board stub, camera lifecycle,
- * worker inference, mirrored preview with a one-hand skeleton, and metrics.
+ * Composition root. Wires camera/tracking, hand input, pointer and keyboard
+ * input, the board controller, the renderer, and the UI. UI code dispatches
+ * commands and reads summaries; it never edits stroke data.
  */
+import { BoardController } from '../board/controller';
 import { browserMediaEnvironment } from '../camera/camera-source';
-import { BoardDocument, type Stroke } from '../board/document';
-import { attachPointerDrawing } from '../input/pointer-input';
-import { BoardRenderer, type CursorView } from '../render/renderer';
-import { LM } from '../tracking/landmarks';
+import type { Rect } from '../core/coords';
+import { attachKeyboard } from '../input/keyboard';
+import { attachPointerInput } from '../input/pointer-input';
+import { BoardRenderer } from '../render/renderer';
+import { regionFromLayout, type SurfaceLayout } from '../tracking/hand-pipeline';
 import type { HandPayload } from '../tracking/protocol';
 import type { BackendPreference, WorkerLike } from '../tracking/tracker-client';
 import { CameraPanel } from '../ui/camera-panel';
-import { el } from '../ui/dom';
+import { el, setText } from '../ui/dom';
 import { CameraPreview } from '../ui/preview';
 import { resolveAssets } from './assets';
 import { CameraSession, type SessionState } from './camera-session';
-import { DEFAULT_CONFIG } from './config';
+import { DEFAULT_CONFIG, type AppConfig } from './config';
+import { HandInput } from './hand-input';
 import { Metrics, noopMetrics, type MetricsSink } from './metrics';
 
 export interface AppHandle {
   readonly metrics: Metrics | null;
   readonly session: CameraSession;
-  readonly board: BoardDocument;
+  readonly controller: BoardController;
   readonly renderer: BoardRenderer;
+  readonly hands: HandInput;
+  readonly config: () => AppConfig;
+  /** Feeds a tracking result exactly as the camera path does (dev replay). */
+  readonly injectResult: (sourceTimeMs: number, hands: readonly HandPayload[], ageMs: number, camera: { width: number; height: number }) => void;
+  readonly layout: () => SurfaceLayout;
   lastHands: readonly HandPayload[];
 }
 
@@ -34,7 +43,7 @@ function backendFromUrl(): BackendPreference {
 
 /**
  * Optional input downscale for evaluation (`?inputScale=0.5`). Default 1:
- * the full camera frame is sent; see docs/performance/m0-backend.md.
+ * the full camera frame is sent; see docs/decisions/0002-tracking-backend.md.
  */
 function inputScaleFromUrl(): number {
   const value = Number(new URLSearchParams(globalThis.location.search).get('inputScale') ?? '1');
@@ -51,18 +60,18 @@ function createInferenceWorker(): WorkerLike {
 export function createApp(root: HTMLElement): AppHandle {
   const metrics = __DEVTOOLS__ ? new Metrics() : null;
   const sink: MetricsSink = metrics ?? noopMetrics;
-  const config = DEFAULT_CONFIG;
+  const config: AppConfig = DEFAULT_CONFIG;
   const inputScale = inputScaleFromUrl();
 
   // --- DOM -----------------------------------------------------------------
   const canvas = el('canvas', {
     class: 'board',
     tabindex: 0,
-    'aria-label': 'Whiteboard canvas. Drag to draw.',
+    'aria-label': 'Whiteboard. Drag to draw, hold Space and drag to pan, scroll to zoom.',
   });
   const preview = new CameraPreview();
+  const modeChip = el('span', { class: 'mode-chip', 'aria-hidden': 'true' }, ['Camera off']);
   let welcome: HTMLElement | null = null;
-  let handVisible = false;
   let sessionState: SessionState = { kind: 'idle' };
 
   const panel = new CameraPanel({
@@ -80,12 +89,12 @@ export function createApp(root: HTMLElement): AppHandle {
 
   const strip = el('aside', { class: 'strip', 'aria-label': 'Controls' }, [
     panel.element,
+    el('div', { class: 'mode-row' }, [modeChip]),
     panel.statusElement,
     preview.element,
   ]);
   const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard]);
   root.append(strip, boardWrap);
-
   welcome = buildWelcome();
   boardWrap.append(welcome);
 
@@ -103,6 +112,7 @@ export function createApp(root: HTMLElement): AppHandle {
     return el('section', { class: 'card welcome', 'aria-labelledby': 'welcome-title' }, [
       el('h1', { id: 'welcome-title' }, ['Air Whiteboard']),
       el('p', {}, ['Write with your hands through the webcam, or draw with a mouse or trackpad.']),
+      el('p', {}, ['Pinch thumb and index finger to draw. Pinch with both hands to move and zoom. Hold a fist to erase.']),
       el('p', {}, [
         'Hand tracking runs on this device. Camera images are not uploaded, and the board stays in this tab unless you export it.',
       ]),
@@ -115,49 +125,109 @@ export function createApp(root: HTMLElement): AppHandle {
     welcome = null;
   }
 
-  // --- Board stub (pointer) ------------------------------------------------
-  const board = new BoardDocument();
-  const renderer = new BoardRenderer(canvas);
-  let active: { points: number[] } | null = null;
-  let cursor: CursorView | null = null;
-  let frameRequested = false;
+  // --- Board, renderer, input -------------------------------------------------
+  const controller = new BoardController(config);
+  const renderer = new BoardRenderer(canvas, config.render, sink);
+  renderer.attach(controller);
 
-  const requestDraw = (): void => {
-    if (frameRequested) return;
-    frameRequested = true;
-    requestAnimationFrame(() => {
-      frameRequested = false;
-      const start = performance.now();
-      const activeStroke: Stroke | null =
-        active !== null ? { id: 0, color: '#1b1f24', width: 3, points: active.points } : null;
-      renderer.draw(board.strokes, activeStroke, cursor);
-      sink.sample('renderMs', performance.now() - start);
-    });
+  let lastFrameAt: number | null = null;
+  renderer.onFrame = (duration) => {
+    const now = performance.now();
+    if (lastFrameAt !== null && now - lastFrameAt < 250) sink.sample('rafIntervalMs', now - lastFrameAt);
+    lastFrameAt = now;
+    sink.sample('frameWorkMs', duration);
+    const observed = hands.pendingDrawObservedAt;
+    if (observed !== null) {
+      // Software pipeline: admitted-frame observation → canvas submission.
+      sink.sample('drawSubmitMs', now - observed);
+      hands.pendingDrawObservedAt = null;
+    }
   };
 
-  const resize = (): void => {
-    const rect = boardWrap.getBoundingClientRect();
-    renderer.resize(rect.width, rect.height, globalThis.devicePixelRatio || 1);
-    requestDraw();
-  };
-  new ResizeObserver(resize).observe(boardWrap);
-
-  attachPointerDrawing(canvas, {
-    begin: (x, y) => {
-      dismissWelcome();
-      active = { points: [x, y] };
-      requestDraw();
-    },
-    move: (x, y) => {
-      active?.points.push(x, y);
-      requestDraw();
-    },
-    end: () => {
-      if (active !== null) board.add('#1b1f24', 3, active.points);
-      active = null;
-      requestDraw();
+  const hands = new HandInput({
+    config: () => config,
+    controller: () => controller,
+    activateControl: () => undefined,
+    metrics: sink,
+    now: () => performance.now(),
+    onUpdate: () => {
+      renderer.setOverlay({ cursors: hands.cursors(), prediction: null });
+      refreshMode();
     },
   });
+
+  let layoutValue: SurfaceLayout = computeLayout();
+  function relative(r: DOMRect, origin: DOMRect): Rect {
+    return { x: r.left - origin.left, y: r.top - origin.top, width: r.width, height: r.height };
+  }
+  function computeLayout(): SurfaceLayout {
+    const rootRect = root.getBoundingClientRect();
+    const board = relative(canvas.getBoundingClientRect(), rootRect);
+    const controls = [...root.querySelectorAll<HTMLElement>('[data-hand-target]')]
+      .filter((node) => node.offsetParent !== null && !node.hasAttribute('disabled'))
+      .map((node) => ({ id: node.dataset.handTarget ?? '', rect: relative(node.getBoundingClientRect(), rootRect) }));
+    return {
+      width: rootRect.width,
+      height: rootRect.height,
+      board,
+      hitTest: regionFromLayout(board, controls, rootRect.width, rootRect.height),
+    };
+  }
+  const relayout = (): void => {
+    layoutValue = computeLayout();
+    hands.setLayout(layoutValue);
+    renderer.resize(layoutValue.board.width, layoutValue.board.height, globalThis.devicePixelRatio || 1);
+  };
+  new ResizeObserver(relayout).observe(root);
+  strip.addEventListener('scroll', relayout, { passive: true });
+  relayout();
+
+  let spaceHeld = false;
+  let pointerActive = false;
+  attachPointerInput(canvas, {
+    controller: () => controller,
+    spaceHeld: () => spaceHeld,
+    canStart: () => hands.idle,
+    onUse: () => dismissWelcome(),
+  });
+  canvas.addEventListener('pointerdown', () => {
+    pointerActive = true;
+    hands.setBlocked(true);
+  });
+  const endPointer = (): void => {
+    if (!pointerActive) return;
+    pointerActive = false;
+    hands.setBlocked(false);
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('lostpointercapture', endPointer);
+
+  const togglePause = (): void => {
+    if (hands.state.paused) hands.resume();
+    else hands.interrupt('pause', true);
+  };
+  attachKeyboard(document, canvas, {
+    undo: () => controller.undo(),
+    redo: () => controller.redo(),
+    requestClear: () => undefined,
+    togglePause,
+    escape: () => {
+      controller.closeTransientWork();
+      hands.interrupt('escape', true);
+    },
+    setSpace: (held) => {
+      spaceHeld = held;
+      canvas.dataset.panning = held ? 'true' : 'false';
+    },
+  });
+
+  function refreshMode(): void {
+    const running = sessionState.kind === 'ready' || sessionState.kind === 'paused' || sessionState.kind === 'warming';
+    const label = running ? hands.label : 'Camera off';
+    setText(modeChip, label);
+    modeChip.dataset.tone = label === 'Tracking lost' || label === 'Paused' ? 'warn' : '';
+  }
 
   // --- Camera + tracking -----------------------------------------------------
   const session = new CameraSession({
@@ -182,53 +252,49 @@ export function createApp(root: HTMLElement): AppHandle {
     now: () => performance.now(),
     onState: (state) => {
       sessionState = state;
-      if (state.kind !== 'ready') handVisible = false;
       if (state.kind === 'idle' || state.kind === 'failed') {
         preview.clear();
-        cursor = null;
-        requestDraw();
+        hands.reset();
       }
-      panel.render(state, handVisible);
+      panel.render(state, handle.lastHands.length > 0);
+      refreshMode();
     },
-    onSourceReset: () => {
-      cursor = null;
-    },
+    onSourceReset: () => hands.reset(),
     onResult: ({ result, observedAt }) => {
       const now = performance.now();
       sink.sample('inferenceMs', result.inferenceMs);
       sink.sample('resultAgeMs', now - observedAt);
-      if (now - observedAt > config.gesture.staleResultMs) {
-        sink.count('staleResults');
-        return;
-      }
-      sink.count('accepted');
+      const video = preview.video;
+      hands.setCamera({ width: video.videoWidth, height: video.videoHeight });
+      const hadHands = handle.lastHands.length > 0;
       handle.lastHands = result.hands;
-      const visible = result.hands.length > 0;
-      if (visible !== handVisible) {
-        handVisible = visible;
-        panel.render(sessionState, handVisible);
-      }
-      preview.draw(result.hands, now, null);
-      // M0 one-hand overlay: mirrored thumb/index midpoint over the board.
-      const hand = result.hands[0];
-      if (hand !== undefined) {
-        const lm = hand.landmarks;
-        const u = (lm[LM.THUMB_TIP * 3]! + lm[LM.INDEX_TIP * 3]!) / 2;
-        const v = (lm[LM.THUMB_TIP * 3 + 1]! + lm[LM.INDEX_TIP * 3 + 1]!) / 2;
-        const rect = canvas.getBoundingClientRect();
-        cursor = { x: (1 - u) * rect.width, y: v * rect.height, color: '#0b57d0', diameter: 12 };
-      } else {
-        cursor = null;
-      }
-      requestDraw();
-      sink.sample('drawSubmitMs', performance.now() - observedAt);
+      if (hadHands !== result.hands.length > 0) panel.render(sessionState, result.hands.length > 0);
+      hands.handleResult(result.sourceTimeMs, result.hands, observedAt);
+      const mapping = hands.pipeline.currentMapping;
+      preview.draw(result.hands, now, mapping?.rect ?? null);
     },
   });
   panel.render(session.state, false);
+  refreshMode();
 
+  setInterval(() => hands.checkLoss(performance.now()), 50);
   globalThis.addEventListener('pagehide', () => session.stop());
 
-  const handle: AppHandle = { metrics, session, board, renderer, lastHands: [] };
+  const handle: AppHandle = {
+    metrics,
+    session,
+    controller,
+    renderer,
+    hands,
+    config: () => config,
+    layout: () => layoutValue,
+    injectResult: (sourceTimeMs, payload, ageMs, camera) => {
+      hands.setCamera(camera);
+      handle.lastHands = payload;
+      hands.handleResult(sourceTimeMs, payload, performance.now() - ageMs);
+    },
+    lastHands: [],
+  };
   if (__DEVTOOLS__) {
     void import('../dev/devtools').then((dev) => dev.installDevtools(handle));
   }
