@@ -102,3 +102,37 @@ provisional onset and release hold, incremental ink, replay-based signal gates.
 ### Next step
 M2: board navigation (two-hand transform, pointer pan/zoom, reset/fit),
 renderer cache behavior under pan/zoom, F14–F16/F29 browser checks.
+
+## M2 — Board and navigation (branch `m2-board-navigation`)
+
+### Completed
+- World-space document with ordered insertion, view math (anchored zoom,
+  two-hand transform with clamping and continuous rebase, fit/reset).
+- Two-hand arbitration in the reducer (cancel short early strokes, keep late
+  writing, simultaneous start, await release, expiry-based recovery).
+- Bounded raster cache with incremental append, region repaint, chunked
+  rebuilds, transformed snapshots during gestures (ADR 0005).
+- Pointer pan (Space-drag, middle button, move tool) and wheel/trackpad zoom
+  anchored at the pointer; reset/fit in the controller (toolbar in M4).
+
+### Checks run
+- Vitest: 216 tests (adds anchor-through-replay tests).
+- Playwright: 25 tests (adds 8 renderer/navigation and 4 pointer/workload tests
+  in the bench build).
+- GPU-canvas workload benchmark (`tests/benchmarks/render-workload.bench.ts`).
+
+### Measurements (Apple M2, Chromium 159 new-headless, DPR 1)
+- Two-hand transform anchor error < 1 px on every update in replay; < 0.01 px
+  in pure math (500 random updates).
+- Normal workload (503 strokes / 101k points): drawing p95 0.1 ms, panning
+  and zooming frames p95 ≤ 3.5 ms, rebuild chunks ≤ 3.5 ms, zero blank frames.
+
+### Failures and unmeasured
+- Not measured: physical display smoothness, DPR > 1 performance on real
+  hardware, screen-sharing conditions, the slower comparison laptop.
+- A single stroke larger than what fits in one chunk is drawn in one piece
+  (chunks split between strokes, not within one).
+
+### Next step
+M3: clear confirmation, pause/resume UI, lifecycle interruptions (blur,
+hidden tab, pagehide, track end, worker crash) wired into hand input.
