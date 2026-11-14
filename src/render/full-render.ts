@@ -3,6 +3,7 @@
  * cache. Used by PNG export (bounded to the visible raster size) and as the
  * reference that cached rendering is tested against.
  */
+import { paintBackground, type BoardBackground } from './background';
 import type { Stroke } from '../board/stroke';
 import type { View } from '../board/view';
 import { boundsIntersect, isEmptyBounds, type Bounds } from '../core/coords';
@@ -17,12 +18,11 @@ export function renderStrokes(
   rasterScale: number,
   cssWidth: number,
   cssHeight: number,
+  dark = false,
+  background: BoardBackground = 'plain',
 ): void {
-  const pxW = Math.round(cssWidth * rasterScale);
-  const pxH = Math.round(cssHeight * rasterScale);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, pxW, pxH);
+  paintBackground(ctx, cssWidth, cssHeight, rasterScale, dark, background === 'camera' ? 'plain' : background);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const viewport: Bounds = {
@@ -36,6 +36,6 @@ export function renderStrokes(
     if (isEmptyBounds(s.bounds)) continue;
     const h = s.width / 2;
     if (!boundsIntersect({ minX: s.bounds.minX - h, minY: s.bounds.minY - h, maxX: s.bounds.maxX + h, maxY: s.bounds.maxY + h }, viewport)) continue;
-    drawStrokeInto(ctx, s, affine);
+    drawStrokeInto(ctx, s, affine, dark);
   }
 }

@@ -51,10 +51,10 @@ export class FakeVideo implements SessionVideo {
   srcObject: MediaProvider | null = null;
   muted = false;
   playsInline = false;
-  private callbacks: Array<(now: number, metadata: { mediaTime: number }) => void> = [];
+  private callbacks: Array<(now: number, metadata: { mediaTime: number; presentedFrames?: number }) => void> = [];
   private nextHandle = 1;
 
-  requestVideoFrameCallback = (cb: (now: number, metadata: { mediaTime: number }) => void): number => {
+  requestVideoFrameCallback = (cb: (now: number, metadata: { mediaTime: number; presentedFrames?: number }) => void): number => {
     this.callbacks.push(cb);
     return this.nextHandle++;
   };
@@ -68,10 +68,10 @@ export class FakeVideo implements SessionVideo {
   }
 
   /** Presents a new frame with the given media time in seconds. */
-  emitFrame(mediaTime: number): void {
+  emitFrame(mediaTime: number, presentedFrames?: number): void {
     const pending = this.callbacks;
     this.callbacks = [];
-    for (const cb of pending) cb(0, { mediaTime });
+    for (const cb of pending) cb(0, { mediaTime, ...(presentedFrames === undefined ? {} : { presentedFrames }) });
   }
 
   get pendingCallbacks(): number {

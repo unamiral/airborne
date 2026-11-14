@@ -4,11 +4,13 @@
  * UI code dispatches commands and reads summaries; it never edits strokes.
  */
 import { BoardController } from '../board/controller';
+import { loadBoard, saveBoard } from '../board/storage';
 import { browserMediaEnvironment, listCameras, type CameraDevice } from '../camera/camera-source';
 import { attachKeyboard } from '../input/keyboard';
 import { attachPointerInput } from '../input/pointer-input';
-import { ExportError, downloadBlob, exportFileName, renderPng } from '../render/export';
+import { ExportError, createExportSurface, downloadBlob, exportFileName, renderPng } from '../render/export';
 import { BoardRenderer } from '../render/renderer';
+import { BACKGROUNDS, type BoardBackground } from '../render/background';
 import type { SurfaceLayout } from '../tracking/hand-pipeline';
 import type { HandPayload } from '../tracking/protocol';
 import type { BackendPreference, WorkerLike } from '../tracking/tracker-client';
@@ -137,7 +139,20 @@ export function createApp(root: HTMLElement): AppHandle {
       canvas.focus({ preventScroll: true });
     },
   });
+  let background: BoardBackground = 'plain';
+  try {
+    const saved = localStorage.getItem('air-background') as BoardBackground | null;
+    if (saved !== null && saved !== 'camera' && BACKGROUNDS.includes(saved)) background = saved;
+  } catch { /* Use plain paper. */ }
   const settings = new SettingsDialog({
+    setBackground: (value) => {
+      background = value;
+      renderer.setBackground(value, preview.video);
+      try { localStorage.setItem('air-background', value === 'camera' ? 'plain' : value); } catch { /* Storage may be unavailable. */ }
+      settings.update(settingsValues());
+      relayout();
+    },
+    setDark: (dark) => { applyTheme(dark); settings.update(settingsValues()); },
     setStabilizer: (stabilizer) => updateSettings({ stabilizer }),
     setReach: (reach) => updateSettings({ reach }),
     setWritingDistance: (key, ratio) => updateSettings({ gesture: { [key]: ratio } }),
@@ -177,6 +192,24 @@ export function createApp(root: HTMLElement): AppHandle {
     else announcer.announce('No eligible ink to clean up.');
   }, () => { relayout(); canvas.focus({ preventScroll: true }); });
 
+  const applyTheme = (dark: boolean, persist = true): void => {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    renderer.setDark(dark);
+    const inkButton = toolbar.button('color-black');
+    if (inkButton !== undefined) {
+      const name = dark ? 'White' : 'Black';
+      inkButton.setAttribute('aria-label', `${name} ink`);
+      inkButton.title = `${name} ink`;
+      const swatch = inkButton.querySelector<HTMLElement>('.swatch');
+      if (swatch !== null) swatch.style.background = dark ? '#ffffff' : '#1b1f24';
+      const label = inkButton.querySelector<HTMLElement>('span:not(.swatch)');
+      if (label !== null) label.textContent = name;
+    }
+    if (persist) { try { localStorage.setItem('air-theme', dark ? 'dark' : 'light'); } catch { /* Storage may be unavailable. */ } }
+  };
+  let savedTheme = '';
+  try { savedTheme = localStorage.getItem('air-theme') ?? ''; } catch { /* Use light mode. */ }
+
   const strip = el('aside', { class: 'strip', 'aria-label': 'Controls' }, [
     panel.element,
     el('div', { class: 'mode-row' }, [modeChip]),
@@ -187,8 +220,10 @@ export function createApp(root: HTMLElement): AppHandle {
   ]);
   const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard]);
   root.append(strip, boardWrap, clearDialog.element, settings.element, handwriting.element, beautify.element, announcer.element);
-  welcome = buildWelcome();
-  boardWrap.append(welcome);
+  if (!document.cookie.split('; ').includes('air-welcome=1')) {
+    welcome = buildWelcome();
+    boardWrap.append(welcome);
+  }
 
   function buildWelcome(): HTMLElement {
     const start = el('button', { type: 'button', class: 'primary' }, ['Start camera']);
@@ -206,13 +241,14 @@ export function createApp(root: HTMLElement): AppHandle {
       el('p', {}, ['Write with your hands through the webcam, or draw with a mouse or trackpad.']),
       el('p', {}, ['Extend your thumb, index and middle finger in roughly the same direction. Move your index fingertip to write. Angle your thumb away to stop. Use the same gesture with both hands to move and zoom. Pinch controls or hold a fist to erase.']),
       el('p', {}, [
-        'Hand tracking runs on this device. Camera images are not uploaded, and the board stays in this tab unless you export it.',
+        'Hand tracking runs on this device. Camera images are not uploaded. One board is saved on this device in this browser.',
       ]),
       el('div', { class: 'actions' }, [start, mouse]),
     ]);
   }
 
   function dismissWelcome(): void {
+    if (welcome !== null) document.cookie = 'air-welcome=1; Max-Age=31536000; Path=/; SameSite=Lax';
     welcome?.remove();
     welcome = null;
     relayout();
@@ -220,9 +256,17 @@ export function createApp(root: HTMLElement): AppHandle {
 
   // --- Boards, renderer --------------------------------------------------------
   const controller = new BoardController(config);
+  let storageAvailable = true;
+  try { controller.restore(loadBoard()); } catch { storageAvailable = false; showNotice('The saved board could not be loaded. Export any new work to keep a copy.'); }
+  controller.onChange((kind) => {
+    if (kind !== 'doc' || !storageAvailable) return;
+    try { saveBoard(controller.doc.strokes); } catch { showNotice('Could not save the board on this device. Export it to keep a copy.'); }
+  });
   let activeBoard: BoardController = controller;
   const renderer = new BoardRenderer(canvas, config.render, sink);
   renderer.attach(controller);
+  applyTheme(savedTheme === 'dark', false);
+  renderer.setBackground(background, preview.video);
   const observeBoard = (board: BoardController): void => {
     board.onChange((kind) => {
       if (board !== activeBoard) return;
@@ -365,7 +409,7 @@ export function createApp(root: HTMLElement): AppHandle {
   async function exportPng(): Promise<void> {
     const r = renderer.stats;
     try {
-      const blob = await renderPng(activeBoard, r.cssWidth, r.cssHeight, r.rasterScale);
+      const blob = await renderPng(activeBoard, r.cssWidth, r.cssHeight, r.rasterScale, createExportSurface, document.documentElement.dataset.theme === 'dark', background);
       downloadBlob(blob, exportFileName(new Date()));
       announcer.announce('Exported the visible board as a PNG image.');
     } catch (error) {
@@ -377,6 +421,8 @@ export function createApp(root: HTMLElement): AppHandle {
   function settingsValues(): SettingsValues {
     const c = pendingConfig ?? config;
     return {
+      dark: document.documentElement.dataset.theme === 'dark',
+      background,
       stabilizer: c.stabilizer,
       reach: c.reach,
       writeStartRatio: c.gesture.writeStartRatio,
@@ -549,6 +595,7 @@ export function createApp(root: HTMLElement): AppHandle {
     now: () => performance.now(),
     onState: (state) => {
       sessionState = state;
+      if (background === 'camera') renderer.invalidate();
       preview.element.hidden = state.kind === 'idle' || state.kind === 'failed';
       if (state.kind === 'idle' || state.kind === 'failed') {
         preview.clear();
@@ -571,6 +618,7 @@ export function createApp(root: HTMLElement): AppHandle {
     onSourceReset: () => hands.reset(),
     onResult: ({ result, observedAt }) => {
       const now = performance.now();
+      if (background === 'camera') renderer.invalidate();
       sink.sample('inferenceMs', result.inferenceMs);
       sink.sample('resultAgeMs', now - observedAt);
       const video = preview.video;

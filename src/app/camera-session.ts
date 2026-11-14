@@ -95,6 +95,7 @@ export interface SessionDeps {
 }
 
 const MAX_RECOVERIES = 2;
+const MAX_CONSECUTIVE_FRAME_FAILURES = 3;
 const RECOVERY_WINDOW_MS = 60_000;
 
 function failureFromTracker(error: unknown): Failure {
@@ -159,6 +160,8 @@ export class CameraSession {
   private scheduler: FrameScheduler<SessionVideo> | null = null;
   private abort: AbortController | null = null;
   private recoveries: number[] = [];
+  private consecutiveFrameFailures = 0;
+  private recoveryBackend: BackendPreference | null = null;
   private startPressedAt: number | null = null;
   private streamAt: number | null = null;
   private readyAt: number | null = null;
@@ -205,6 +208,8 @@ export class CameraSession {
     this.abort = abort;
     this.startPressedAt = this.deps.now();
     this.recoveries = [];
+    this.consecutiveFrameFailures = 0;
+    this.recoveryBackend = null;
     this.setState({ kind: 'requesting-camera', modelLoading: true });
 
     // Model loading runs in parallel with the permission prompt; both are
@@ -266,7 +271,7 @@ export class CameraSession {
     return startTracker({
       createWorker: this.deps.createWorker,
       assets: this.deps.assets,
-      backend: this.deps.backend,
+      backend: this.recoveryBackend ?? this.deps.backend,
       initTimeoutMs: 45_000,
       detectTimeoutMs: 2_000,
       warmupFrames: 5,
@@ -276,6 +281,7 @@ export class CameraSession {
 
   private adoptTracker(tracker: TrackerClient): void {
     this.tracker = tracker;
+    this.consecutiveFrameFailures = 0;
     this.readyAt = this.deps.now();
     tracker.onCrash((message) => this.recover(message));
     this.info = {
@@ -311,6 +317,7 @@ export class CameraSession {
 
   private onResult(admitted: AdmittedResult): void {
     if (admitted.result.epoch !== this.epoch) return;
+    this.consecutiveFrameFailures = 0;
     const kind = this.stateValue.kind;
     if (kind === 'warming' && this.tracker !== null) {
       if (this.readyAt !== null) {
@@ -323,13 +330,20 @@ export class CameraSession {
 
   private onDetectFailure(error: unknown): void {
     const name = error instanceof Error ? error.name : '';
-    // A single failed frame is not fatal; timeouts and crashes trigger recovery.
-    if (name === 'DetectTimeoutError') this.recover('Inference stopped responding.');
+    // Tolerate an isolated bad frame, but never remain stuck on a backend
+    // that initializes successfully and then fails on every camera frame.
+    this.consecutiveFrameFailures++;
+    if (name === 'DetectTimeoutError' || this.consecutiveFrameFailures >= MAX_CONSECUTIVE_FRAME_FAILURES) {
+      this.recover(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /** Bounded recovery: at most MAX_RECOVERIES worker restarts per minute. */
   private recover(reason: string): void {
     if (!this.active || this.stateValue.kind === 'recovering') return;
+    if (this.deps.backend === 'auto' && this.tracker?.backend === 'GPU') {
+      this.recoveryBackend = 'CPU';
+    }
     const now = this.deps.now();
     this.recoveries = this.recoveries.filter((t) => now - t < RECOVERY_WINDOW_MS);
     this.scheduler?.stop();

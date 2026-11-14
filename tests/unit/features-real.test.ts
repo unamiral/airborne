@@ -58,8 +58,8 @@ describe('features on real model landmarks', () => {
     }
   });
 
-  it('documents a known consequence: a thumbs-up counts as a fist (four curled fingers)', () => {
+  it('does not classify a thumbs-up as a fist', () => {
     const [f] = features('thumb_up.jpg');
-    expect(f!.fist).toBe(true);
+    expect(f!.fist).toBe(false);
   });
 });

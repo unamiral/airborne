@@ -10,6 +10,7 @@
   --button-bg: #ffffff;
   --button-border: #b8bec8;
   --button-pressed: #dbe6fb;
+  --surface: #ffffff;
   --target: 48px;
   --gap: 6px;
   --columns: 3;
@@ -149,7 +150,7 @@ body {
   padding: 8px 10px;
   border: 1px solid var(--button-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   font: inherit;
   font-size: 12px;
   text-align: left;
@@ -200,7 +201,7 @@ body {
   min-height: var(--target);
   border: 1px solid var(--button-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -338,7 +339,7 @@ input:focus-visible,
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--button-border);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .mode-chip[data-tone='warn'] {
@@ -402,7 +403,7 @@ input:focus-visible,
 .card {
   position: absolute;
   max-width: min(440px, calc(100% - 32px));
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--strip-border);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.12);
@@ -461,7 +462,7 @@ input:focus-visible,
 }
 
 .secondary {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--button-border);
   color: var(--text);
 }
@@ -489,7 +490,7 @@ input:focus-visible,
   gap: 8px;
   padding: 6px 10px;
   font-size: 12px;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px dashed #6b7280;
   border-radius: 8px;
 }
@@ -576,4 +577,73 @@ input:focus-visible,
   padding: .75rem;
   font: 1.1rem/1.5 system-ui, sans-serif;
   resize: vertical;
+}
+
+:root[data-theme='dark'] {
+  --strip-bg: #1d2532;
+  --strip-border: #485363;
+  --text: #edf1f7;
+  --muted: #c2cad6;
+  --accent: #9cc3ff;
+  --focus: #9cc3ff;
+  --button-bg: #303b4c;
+  --button-border: #738197;
+  --button-pressed: #34527b;
+  --surface: #273243;
+  color-scheme: dark;
+}
+:root[data-theme='dark'] .notice { background: #5b4020; border-color: #aa7c40; }
+:root[data-theme='dark'] .board { background: black; }
+
+/* More columns reduce the height of the control selector on short screens. */
+@media (min-width: 641px) and (max-height: 850px) {
+  .strip { --columns: 4; }
+}
+@media (max-width: 640px) {
+  .strip { flex-wrap: wrap; max-height: 45dvh; }
+  .toolbar { flex-wrap: wrap; }
+}
+@media (min-width: 641px) and (max-height: 680px) {
+  .strip { --columns: 5; }
+}
+@media (max-width: 640px) {
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+    align-items: start;
+    gap: 4px;
+    max-height: 55dvh;
+  }
+  .strip .toolbar { display: contents; }
+  .strip .strip-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strip .preview { width: 100%; }
+  .strip .status { min-height: 0; }
+}
+@media (max-height: 680px) and (min-width: 641px) {
+  .strip .preview { max-height: 90px; aspect-ratio: auto; }
+}
+/* A quieter workspace and compact, tactile appearance controls. */
+:root { --strip-bg: #f5f7fa; --strip-border: #e2e7ee; --button-border: #d4dce7; --gap: 7px; }
+.strip { padding: 10px 7px; }
+.strip-label { font-size: 10px; letter-spacing: .08em; margin-top: 4px; }
+.tool, .choice, .switch, .background-choice { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.settings { width: min(680px, calc(100vw - 32px)); max-width: calc(100vw - 32px); padding: 24px; border-radius: 18px; box-shadow: 0 22px 70px rgb(12 24 45 / .22); }
+.settings h2 { font-size: 23px; letter-spacing: -.03em; }
+.settings h3 { margin-top: 22px; }
+.background-choices { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.background-choice { min-width: 0; border: 1px solid var(--button-border); border-radius: 10px; padding: 5px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.background-choice[aria-pressed='true'] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.background-thumbnail { display: block; height: 48px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #dbe2eb; background-color: #fff; }
+.background-grid .background-thumbnail { background-image: linear-gradient(#dce4ee 1px, transparent 1px), linear-gradient(90deg, #dce4ee 1px, transparent 1px); background-size: 12px 12px; }
+.background-notebook .background-thumbnail { background-image: linear-gradient(90deg, transparent 18%, #e5a9b0 18%, #e5a9b0 20%, transparent 20%), repeating-linear-gradient(transparent 0 11px, #dce4ee 11px 12px); }
+.background-cornell .background-thumbnail { background-image: linear-gradient(90deg, transparent 26%, #e5a9b0 26%, #e5a9b0 28%, transparent 28%), linear-gradient(0deg, transparent 20%, #e5a9b0 20%, #e5a9b0 23%, transparent 23%), repeating-linear-gradient(transparent 0 11px, #dce4ee 11px 12px); }
+.background-camera .background-thumbnail { background: linear-gradient(135deg, #a7bbd1, #314a6a); }
+@media (max-width: 520px) { .background-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); } .settings { padding: 18px; } }
+
+/* Keep appearance and gesture controls reachable together on desktop. */
+@media (min-width: 800px) {
+  .settings:has(.settings-columns) { width: min(960px, calc(100vw - 32px)); }
+  .settings-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .settings-columns > section { min-width: 0; }
+  .settings-columns h3:first-child { margin-top: 0; }
 }

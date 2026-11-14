@@ -44,10 +44,16 @@ test('playback speed does not change the committed board (F32)', async ({ page }
   const json = JSON.parse(JSON.stringify(record)) as unknown;
   await page.evaluate((r) => window.__air!.replay(r, 1), json);
   const realtime = await page.evaluate(() => window.__air!.boardDump());
+  // Compare each playback on a fresh board despite persisted ink and welcome choice.
+  await page.evaluate(() => localStorage.removeItem('air-whiteboard-board-v1'));
+  await page.context().clearCookies();
   await page.reload();
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.evaluate((r) => window.__air!.replay(r, Number.POSITIVE_INFINITY), json);
   const fast = await page.evaluate(() => window.__air!.boardDump());
+  // Compare each playback on a fresh board despite persisted ink and welcome choice.
+  await page.evaluate(() => localStorage.removeItem('air-whiteboard-board-v1'));
+  await page.context().clearCookies();
   await page.reload();
   await page.getByRole('button', { name: 'Use mouse' }).click();
   await page.evaluate((r) => window.__air!.replay(r, 0.5), json);

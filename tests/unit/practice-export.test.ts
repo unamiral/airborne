@@ -60,6 +60,9 @@ class FakeCtx {
   fillRect(_x: number, _y: number, w: number, h: number): void {
     this.calls.push(`fillRect ${w}x${h} ${this.fillStyle}`);
   }
+  save(): void {}
+  restore(): void {}
+  scale(): void {}
   beginPath(): void {}
   moveTo(): void {}
   lineTo(): void {}

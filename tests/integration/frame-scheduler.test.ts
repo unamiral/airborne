@@ -94,6 +94,29 @@ describe('frame admission', () => {
     expect(s.bitmaps.every((b) => b.closed)).toBe(true);
   });
 
+  it('keeps tracking WebKit frames whose mediaTime freezes but presentedFrames advances', async () => {
+    const s = setup();
+    s.scheduler.start(1);
+    for (let i = 0; i < 4; i++) {
+      s.setNow(i * 33);
+      s.video.emitFrame(0, i + 1);
+      s.resolveSnapshot(i);
+      await flush();
+      s.answer(i);
+      await flush();
+    }
+    expect(s.detects.map((d) => d.envelope.sourceTimeMs)).toEqual([0, 33, 66, 99]);
+    expect(s.results).toHaveLength(4);
+    // An unchanged frame counter is not a new frame, even if mediaTime changes.
+    s.video.emitFrame(0.2, 4);
+    expect(s.snapshots).toHaveLength(4);
+    expect(s.metrics.counter('duplicateFrames')).toBe(1);
+    s.scheduler.stop();
+    s.scheduler.start(2);
+    s.video.emitFrame(0, 1);
+    expect(s.snapshots).toHaveLength(5);
+  });
+
   it('never admits a duplicate or reversed source timestamp', async () => {
     const s = setup();
     s.scheduler.start(1);

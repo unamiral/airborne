@@ -9,8 +9,7 @@ laptop webcam and bare hands, or with a mouse or trackpad.
 - **Pinch on a control** in the left strip to use it (one action per pinch).
 
 Hand tracking (MediaPipe Hand Landmarker) runs locally in a web worker. Camera
-images are not uploaded, nothing is stored, and the board stays in the tab
-unless you export a PNG.
+images are not uploaded. One board and the theme preference are saved locally in your browser; cookies remember welcome and practice choices. Export a PNG for a portable copy.
 
 The specification is [air-whiteboard-architecture-prompt.md](air-whiteboard-architecture-prompt.md).
 Milestone reports with checks and measurements: [docs/milestones.md](docs/milestones.md).
@@ -48,7 +47,7 @@ every file against the SHA-256 values in `assets.manifest.json`.
 npm run typecheck          # strict TypeScript (app, worker, tests/scripts)
 npm run lint               # ESLint with type-aware rules
 npm test                   # Vitest: unit + integration (Node)
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:e2e           # builds dist/ and dist-bench/, then Playwright
 npm run check              # all of the above
 ```
@@ -93,11 +92,10 @@ camera selection. Help starts a 20-second practice on a separate board.
 
 - Video frames and landmarks never leave the device; the app makes only
   same-origin GET requests for its own files (verified by a browser test that
-  also checks for websockets, cookies, storage, caches, and service workers).
+  also checks for websockets, browser storage, caches, and service workers).
 - The camera is requested only after **Start camera**; it is stopped by Stop,
   page hide, or a tab hidden for more than 30 seconds.
-- No accounts, analytics, crash reporting, or storage. The board is lost when
-  the tab closes unless exported.
+- No accounts, analytics, or crash reporting. One board is saved locally in the browser; export a PNG for a portable copy.
 - Development builds include a landmark recorder (no video) with a visible
   indicator, size/duration limits, discard, and explicit export. Production
   builds do not contain it.
@@ -146,10 +144,10 @@ An automated version of this script runs in `tests/e2e/bench/release.spec.ts`.
   (ADR 0003). Prediction is implemented but disabled.
 - The camera→board mapping keeps the surface aspect ratio instead of
   stretching the central 70% of both axes (ADR 0004).
-- A thumbs-up counts as a fist for erasing (four-finger definition).
+- Fist recognition is based on limited hand-pose fixtures; test it with a real camera and varied hands, angles, and lighting.
 - No real-camera recordings, user trials, physical latency, thermal or
   second-laptop measurements; Edge and Windows untested.
-- Strokes are erased whole; no selection, text, shapes, saving, or multi-user.
+- Strokes are erased whole; no selection, text, shapes, or multi-user.
 
 ## Documentation
 

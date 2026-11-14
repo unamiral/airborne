@@ -21,6 +21,7 @@ import { DetectTimeoutError, type DetectEnvelope } from '../tracking/tracker-cli
 
 interface FrameMetadata {
   readonly mediaTime: number;
+  readonly presentedFrames?: number;
 }
 
 /** The subset of HTMLVideoElement used here; tests substitute a fake. */
@@ -62,6 +63,9 @@ export class FrameScheduler<V extends VideoFrameSource> {
   private lastSourceMs = -Infinity;
   private lastSeenTime = Number.NaN;
   private lastFrameAt = Number.NaN;
+  private lastPresentedFrames = -1;
+  private callbackSourceMs = -Infinity;
+  private callbackAt = Number.NaN;
   private vfcHandle: number | null = null;
   private rafHandle: number | null = null;
   private latest: { sourceTimeMs: number; observedAt: number } | null = null;
@@ -84,6 +88,9 @@ export class FrameScheduler<V extends VideoFrameSource> {
     this.lastSourceMs = -Infinity;
     this.lastSeenTime = Number.NaN;
     this.lastFrameAt = Number.NaN;
+    this.lastPresentedFrames = -1;
+    this.callbackSourceMs = -Infinity;
+    this.callbackAt = Number.NaN;
     this.schedule(this.generation);
   }
 
@@ -107,7 +114,28 @@ export class FrameScheduler<V extends VideoFrameSource> {
       this.vfcHandle = video.requestVideoFrameCallback((_now, metadata) => {
         this.vfcHandle = null;
         if (generation !== this.generation) return;
-        this.onFrame(metadata.mediaTime * 1000, generation);
+        let sourceMs = metadata.mediaTime * 1000;
+        const now = this.deps.now();
+        const presented = metadata.presentedFrames;
+        // WebKit MediaStreams can present new frames with a frozen mediaTime.
+        // Only a strictly advancing frame counter authorizes repairing that
+        // timestamp; repeated callbacks must still be rejected as duplicates.
+        if (presented !== undefined && Number.isFinite(presented)) {
+          if (presented <= this.lastPresentedFrames) {
+            this.deps.metrics.count('duplicateFrames');
+            this.schedule(generation);
+            return;
+          }
+          if (!(sourceMs > this.callbackSourceMs)) {
+            sourceMs = Number.isFinite(this.callbackSourceMs)
+              ? this.callbackSourceMs + Math.max(1, now - this.callbackAt)
+              : 0;
+          }
+          this.lastPresentedFrames = presented;
+        }
+        this.callbackSourceMs = sourceMs;
+        this.callbackAt = now;
+        this.onFrame(sourceMs, generation);
         this.schedule(generation);
       });
     } else {

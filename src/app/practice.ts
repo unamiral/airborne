@@ -31,10 +31,12 @@ export class PracticeSession {
     this.card = new PracticeCard(() => this.stop());
     this.offer = new PracticeOffer(
       () => {
+        document.cookie = 'air-practice=1; Max-Age=31536000; Path=/; SameSite=Lax';
         this.offer.element.hidden = true;
         this.start();
       },
       () => {
+        document.cookie = 'air-practice=1; Max-Age=31536000; Path=/; SameSite=Lax';
         this.offer.element.hidden = true;
         host.onChange();
       },
@@ -51,7 +53,7 @@ export class PracticeSession {
 
   /** Offers practice once per page session (on first camera readiness). */
   offerOnce(): void {
-    if (this.offered || this.active) return;
+    if (this.offered || this.active || document.cookie.split('; ').includes('air-practice=1')) return;
     this.offered = true;
     this.offer.element.hidden = false;
     this.host.onChange();
@@ -101,6 +103,7 @@ export class PracticeSession {
     if (target === 'practice-skip' || target === 'practice-done') this.stop();
     else if (target === 'practice-start') this.start();
     else if (target === 'practice-dismiss') {
+      document.cookie = 'air-practice=1; Max-Age=31536000; Path=/; SameSite=Lax';
       this.offer.element.hidden = true;
       this.host.onChange();
     } else return false;
