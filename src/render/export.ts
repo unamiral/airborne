@@ -5,6 +5,7 @@
  * controls. Rendered on a dedicated surface at the visible raster size (never
  * sized from world bounds). Changes neither history nor the view.
  */
+import type { BoardBackground } from './background';
 import type { BoardController } from '../board/controller';
 import type { Stroke } from '../board/stroke';
 import { renderStrokes } from './full-render';
@@ -70,6 +71,8 @@ export async function renderPng(
   cssHeight: number,
   rasterScale: number,
   createSurface: (w: number, h: number) => ExportSurface = createExportSurface,
+  dark = false,
+  background: BoardBackground = 'plain',
 ): Promise<Blob> {
   const w = Math.max(1, Math.round(cssWidth * rasterScale));
   const h = Math.max(1, Math.round(cssHeight * rasterScale));
@@ -77,7 +80,7 @@ export async function renderPng(
   const ctx = surface.getContext('2d');
   if (ctx === null) throw new ExportError('This browser could not create an image surface for export.');
   // Snapshot a consistent board/view version before any await.
-  renderStrokes(ctx, exportStrokes(board), board.view, rasterScale, cssWidth, cssHeight);
+  renderStrokes(ctx, exportStrokes(board), board.view, rasterScale, cssWidth, cssHeight, dark, background);
   const blob = await surface.toPngBlob();
   if (blob === null) throw new ExportError('The browser could not encode the PNG image.');
   return blob;

@@ -18,7 +18,7 @@ test('the production bundle contains no developer tooling or source maps (F31)',
   expect(readdirSync('dist/assets').some((f) => f.endsWith('.map'))).toBe(false);
 });
 
-test('a full session makes only same-origin GET requests and stores nothing (F31)', async ({ page }) => {
+test('a full session makes only same-origin GET requests and keeps data locally (F31)', async ({ page }) => {
   const requests: Array<{ url: string; method: string }> = [];
   const sockets: string[] = [];
   page.on('request', (r) => requests.push({ url: r.url(), method: r.method() }));
@@ -51,7 +51,9 @@ test('a full session makes only same-origin GET requests and stores nothing (F31
     caches: 'caches' in window ? (await caches.keys()).length : 0,
     serviceWorkers: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
   }));
-  expect(storage).toEqual({ local: 0, session: 0, cookie: '', idb: 0, caches: 0, serviceWorkers: 0 });
+  expect(storage.local).toBeGreaterThan(0);
+  expect(storage.cookie).toContain('air-welcome=1');
+  expect({ session: storage.session, idb: storage.idb, caches: storage.caches, serviceWorkers: storage.serviceWorkers }).toEqual({ session: 0, idb: 0, caches: 0, serviceWorkers: 0 });
 });
 
 test('the deployment headers file matches the preview headers (F35)', () => {

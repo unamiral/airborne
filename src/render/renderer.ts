@@ -13,6 +13,7 @@
  * held-back preview and optional prediction, then cursors. Frames are
  * scheduled only while something is dirty, animating, or rebuilding.
  */
+import { paintBackground, type BoardBackground } from './background';
 import type { RenderConfig } from '../app/config';
 import type { MetricsSink } from '../app/metrics';
 import type { BoardController } from '../board/controller';
@@ -79,14 +80,14 @@ const REGION_POINT_LIMIT = 40_000;
 function createLayer(width: number, height: number): Layer {
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d');
     if (ctx === null) throw new Error('Canvas 2D is not available for the board cache.');
     return { canvas, ctx };
   }
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d');
   if (ctx === null) throw new Error('Canvas 2D is not available for the board cache.');
   return { canvas, ctx };
 }
@@ -99,12 +100,16 @@ function inflate(b: Bounds, by: number): Bounds {
   return { minX: b.minX - by, minY: b.minY - by, maxX: b.maxX + by, maxY: b.maxY + by };
 }
 
-export function drawStrokeInto(ctx: Surface2D, stroke: Pick<Stroke, 'points' | 'corners' | 'color' | 'width'>, affine: Affine): void {
+export function inkColor(color: string, dark: boolean): string {
+  return dark && color.toLowerCase() === '#1b1f24' ? '#ffffff' : color;
+}
+
+export function drawStrokeInto(ctx: Surface2D, stroke: Pick<Stroke, 'points' | 'corners' | 'color' | 'width'>, affine: Affine, dark = false): void {
   const p = stroke.points;
   if (p.length === 0) return;
   const w = stroke.width * affine.scale;
-  ctx.strokeStyle = stroke.color;
-  ctx.fillStyle = stroke.color;
+  ctx.strokeStyle = inkColor(stroke.color, dark);
+  ctx.fillStyle = inkColor(stroke.color, dark);
   if (isDotGeometry(p)) {
     ctx.beginPath();
     ctx.arc(p.x(0) * affine.scale + affine.dx, p.y(0) * affine.scale + affine.dy, w / 2, 0, Math.PI * 2);
@@ -118,6 +123,22 @@ export function drawStrokeInto(ctx: Surface2D, stroke: Pick<Stroke, 'points' | '
 }
 
 export class BoardRenderer {
+  private dark = false;
+  private background: BoardBackground = 'plain';
+  private camera: HTMLVideoElement | undefined;
+
+  setBackground(background: BoardBackground, camera?: HTMLVideoElement): void {
+    this.background = background;
+    this.camera = camera;
+    this.invalidate();
+  }
+
+
+  setDark(dark: boolean): void {
+    if (this.dark === dark) return;
+    this.dark = dark;
+    this.resetCache();
+  }
   private readonly visible: CanvasRenderingContext2D;
   private front: Layer | null = null;
   private back: Layer | null = null;
@@ -290,7 +311,8 @@ export class BoardRenderer {
     this.framesDrawn++;
     this.metrics.sample('renderMs', duration);
     this.onFrame?.(duration);
-    if (this.job !== null) this.schedule();
+    if (this.background === 'camera' && this.camera?.srcObject && !this.camera.paused) this.dirty = true;
+    if (this.job !== null || this.dirty) this.schedule();
   }
 
   /** Brings the front cache up to date with document changes. */
@@ -323,7 +345,7 @@ export class BoardRenderer {
     if (removed.length === 0 && drawn === null && added.every((s) => s.seq > maxFrontSeq)) {
       const affine = this.affineFor(this.frontView);
       for (const s of added) {
-        drawStrokeInto(this.front!.ctx, s, affine);
+        drawStrokeInto(this.front!.ctx, s, affine, this.dark);
         this.frontStrokes.set(s.id, s);
       }
       return;
@@ -364,11 +386,10 @@ export class BoardRenderer {
     ctx.beginPath();
     ctx.rect(x0, y0, x1 - x0, y1 - y0);
     ctx.clip();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.clearRect(x0, y0, x1 - x0, y1 - y0);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const s of hits) drawStrokeInto(ctx, s, affine);
+    for (const s of hits) drawStrokeInto(ctx, s, affine, this.dark);
     const active = board.active;
     if (active !== null && this.activeDrawn?.id === active.builder.id && this.activeDrawn.segments > 0) {
       this.drawActiveSegments(ctx, board, 1, this.activeDrawn.segments, affine);
@@ -382,8 +403,7 @@ export class BoardRenderer {
     this.job = { view, docVersion: board.doc.version, strokes: board.doc.strokes.slice(), index: 0, started: performance.now() };
     const back = this.back!;
     back.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    back.ctx.fillStyle = '#ffffff';
-    back.ctx.fillRect(0, 0, back.canvas.width, back.canvas.height);
+    back.ctx.clearRect(0, 0, back.canvas.width, back.canvas.height);
     back.ctx.lineCap = 'round';
     back.ctx.lineJoin = 'round';
   }
@@ -405,7 +425,7 @@ export class BoardRenderer {
     const chunkStart = performance.now();
     while (job.index < job.strokes.length) {
       const s = job.strokes[job.index++]!;
-      if (this.visibleStroke(s, viewport)) drawStrokeInto(back.ctx, s, affine);
+      if (this.visibleStroke(s, viewport)) drawStrokeInto(back.ctx, s, affine, this.dark);
       if (performance.now() - chunkStart > budget) break;
     }
     this.metrics.sample('rebuildChunkMs', performance.now() - chunkStart);
@@ -436,7 +456,7 @@ export class BoardRenderer {
     const active = board.active;
     if (active === null || to < from) return;
     const b = active.builder;
-    ctx.strokeStyle = b.style.color;
+    ctx.strokeStyle = inkColor(b.style.color, this.dark);
     ctx.lineWidth = b.style.width * affine.scale;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -477,12 +497,12 @@ export class BoardRenderer {
     const front = this.front!;
     const affine = this.affineFor(this.frontView!);
     if (drawnSegments === 0) {
-      drawStrokeInto(front.ctx, stroke, affine);
+      drawStrokeInto(front.ctx, stroke, affine, this.dark);
       return;
     }
     const total = segmentCount(stroke.points);
     if (total <= drawnSegments) return;
-    front.ctx.strokeStyle = stroke.color;
+    front.ctx.strokeStyle = inkColor(stroke.color, this.dark);
     front.ctx.lineWidth = stroke.width * affine.scale;
     front.ctx.lineCap = 'round';
     front.ctx.lineJoin = 'round';
@@ -495,8 +515,7 @@ export class BoardRenderer {
     const ctx = this.visible;
     const rs = this.rs;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    paintBackground(ctx, this.cssWidth, this.cssHeight, rs, this.dark, this.background, this.camera);
     const front = this.front;
     const fv = this.frontView;
     if (front !== null && fv !== null) {
@@ -523,9 +542,9 @@ export class BoardRenderer {
       const fromSeg = (this.activeDrawn?.id === b.id ? this.activeDrawn.segments : 0) + 1;
       const total = segmentCount(b.points);
       if (b.points.length === 1 || isDotGeometry(b.points)) {
-        drawStrokeInto(ctx, { points: b.points, corners: b.corners, color: b.style.color, width: b.style.width }, affine);
+        drawStrokeInto(ctx, { points: b.points, corners: b.corners, color: b.style.color, width: b.style.width }, affine, this.dark);
       } else if (fromSeg <= total) {
-        ctx.strokeStyle = b.style.color;
+        ctx.strokeStyle = inkColor(b.style.color, this.dark);
         ctx.lineWidth = b.style.width * affine.scale;
         ctx.beginPath();
         emitSegments(b.points, b.corners, fromSeg, total, ctx, affine);
@@ -535,7 +554,7 @@ export class BoardRenderer {
       const endX = b.points.x(n - 1) * affine.scale + affine.dx;
       const endY = b.points.y(n - 1) * affine.scale + affine.dy;
       if (active.preview.length > 0 || this.overlay.prediction !== null) {
-        ctx.strokeStyle = b.style.color;
+        ctx.strokeStyle = inkColor(b.style.color, this.dark);
         ctx.lineWidth = b.style.width * affine.scale;
         ctx.globalAlpha = 0.55;
         ctx.beginPath();

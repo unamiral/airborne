@@ -68,6 +68,18 @@ export class BoardController {
     this.history = new History({ maxActions: config.limits.undoActions, maxBytes: config.limits.undoBytes });
   }
 
+  /** Restore committed strokes into a new board, without creating undo history. */
+  restore(strokes: readonly Stroke[]): void {
+    if (this.doc.strokeCount !== 0 || this.activeValue !== null) throw new Error('Board must be empty');
+    this.doc.insert(strokes);
+    for (const stroke of strokes) {
+      this.nextId = Math.max(this.nextId, stroke.id + 1);
+      this.nextSeq = Math.max(this.nextSeq, stroke.seq + 1);
+    }
+    this.refreshLimit();
+    this.emit('doc');
+  }
+
   setConfig(config: AppConfig): void {
     this.config = config;
     this.history.setLimits({ maxActions: config.limits.undoActions, maxBytes: config.limits.undoBytes });
