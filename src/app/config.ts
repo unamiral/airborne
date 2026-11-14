@@ -7,19 +7,32 @@
  * CONFIG_VERSION plus the full config.
  */
 
-export const CONFIG_VERSION = 2;
+export const CONFIG_VERSION = 4;
 
 /**
  * Upgrades a configuration recorded with an older CONFIG_VERSION (replay
  * fixtures and recordings embed their config). Returns the input unchanged
  * when no migration applies; validateConfig decides whether it is usable.
- *   v1 → v2: added `lifecycle` (hidden-tab camera stop).
+ * Version 1 lacked lifecycle settings. Versions 1 and 2 lacked writing proximity settings.
+ * Versions 1 to 3 used the same limit for result age and gaps between samples.
  */
 export function migrateConfig(version: unknown, config: unknown): unknown {
-  if (version === 1 && typeof config === 'object' && config !== null) {
-    return { ...(config as Record<string, unknown>), version: 2, lifecycle: { hiddenStopMs: 30_000 } };
-  }
-  return config;
+  if ((version !== 1 && version !== 2 && version !== 3) || !isRecord(config)) return config;
+  if (!isRecord(config.gesture)) return config;
+  return {
+    ...config,
+    ...(version === 1 ? { lifecycle: DEFAULT_CONFIG.lifecycle } : {}),
+    version: CONFIG_VERSION,
+    gesture: {
+      ...config.gesture,
+      ...(version === 3 ? {} : {
+        writeStartRatio: DEFAULT_CONFIG.gesture.writeStartRatio,
+        writeReleaseRatio: DEFAULT_CONFIG.gesture.writeReleaseRatio,
+        writeConfirmMs: DEFAULT_CONFIG.gesture.writeConfirmMs,
+      }),
+      maxResultAgeMs: config.gesture.staleResultMs,
+    },
+  };
 }
 
 export type StabilizerPreset = 'light' | 'balanced' | 'steady';
@@ -61,17 +74,17 @@ export interface GestureConfig {
   readonly pinchDownRatio: number;
   /** Hysteresis release ratio; must exceed pinchDownRatio. */
   readonly pinchUpRatio: number;
-  /** Minimum candidate duration before a pinch is confirmed, ms. */
+  /** Thumb-to-middle fingertip distance, in palm lengths, to begin writing. */
+  readonly writeStartRatio: number;
+  /** Larger thumb-to-middle distance, in palm lengths, to release writing. */
+  readonly writeReleaseRatio: number;
+  /** Continuous time inside the start threshold to confirm writing, ms. */
+  readonly writeConfirmMs: number;
+  /** Minimum candidate duration before a control pinch is confirmed, ms. */
   readonly confirmMs: number;
   /** Minimum valid pinched samples before confirmation, count. */
   readonly confirmSamples: number;
-  /**
-   * While drawing, samples whose ratio is between the down and up thresholds
-   * are held back for at most this long, ms. They are discarded if the pinch
-   * then opens (no opening-finger tails) and appended otherwise.
-   */
-  readonly releaseHoldMs: number;
-  /** Window after onset in which a second pinching hand cancels the stroke, ms. */
+  /** Window after onset in which a second hand can cancel an initial stroke, ms. */
   readonly twoHandJoinWindowMs: number;
   /** Path length below which a first-hand stroke may be rolled back, CSS px. */
   readonly transformRollbackPathPx: number;
@@ -81,11 +94,9 @@ export interface GestureConfig {
   readonly fistArmMs: number;
   /** Fist gesture enabled (an explicit eraser tool is always available). */
   readonly fistEraseEnabled: boolean;
-  /** Longest tracking gap that may be reconnected during drawing, ms. */
-  readonly shortDropoutMs: number;
-  /** Maximum distance between last trusted and returning pen point, CSS px. */
-  readonly reconnectDistancePx: number;
-  /** Results older than this since frame observation are treated as loss, ms. */
+  /** Maximum age of a delivered result since its frame was observed, ms. */
+  readonly maxResultAgeMs: number;
+  /** Maximum gap between writing samples or between result deliveries, ms. */
   readonly staleResultMs: number;
   /** Absent tracks expire after this long, ms. */
   readonly trackExpiryMs: number;
@@ -164,7 +175,7 @@ export interface CameraConfig {
 export interface AppConfig {
   readonly version: number;
   readonly stabilizer: StabilizerPreset;
-  /** Fraction of the camera frame used as the reach rectangle. */
+  /** Controls sensitivity inside the full camera frame; larger values are less sensitive. */
   readonly reach: number;
   /** Eraser radius on screen, CSS px. */
   readonly eraserRadiusPx: number;
@@ -187,16 +198,18 @@ export const DEFAULT_CONFIG: AppConfig = {
   gesture: {
     pinchDownRatio: 0.25,
     pinchUpRatio: 0.4,
+    writeStartRatio: 0.32,
+    writeReleaseRatio: 0.55,
+    writeConfirmMs: 50,
     confirmMs: 20,
     confirmSamples: 2,
-    releaseHoldMs: 120,
     twoHandJoinWindowMs: 250,
     transformRollbackPathPx: 16,
     minTransformSeparationPx: 40,
     fistArmMs: 180,
     fistEraseEnabled: true,
-    shortDropoutMs: 80,
-    reconnectDistancePx: 8,
+    // Allow results delayed by inference without relaxing the tracking gap limit.
+    maxResultAgeMs: 125,
     staleResultMs: 100,
     trackExpiryMs: 250,
   },
@@ -267,15 +280,16 @@ export const CONFIG_BOUNDS: {
   gesture: {
     pinchDownRatio: { min: 0.05, max: 0.6, unit: 'ratio' },
     pinchUpRatio: { min: 0.1, max: 0.9, unit: 'ratio' },
+    writeStartRatio: { min: 0.1, max: 0.7, unit: 'palm lengths' },
+    writeReleaseRatio: { min: 0.2, max: 1.2, unit: 'palm lengths' },
+    writeConfirmMs: { min: 40, max: 60, unit: 'ms' },
     confirmMs: { min: 0, max: 200, unit: 'ms' },
     confirmSamples: { min: 1, max: 6, unit: 'samples', integer: true },
-    releaseHoldMs: { min: 0, max: 300, unit: 'ms' },
     twoHandJoinWindowMs: { min: 0, max: 1000, unit: 'ms' },
     transformRollbackPathPx: { min: 0, max: 100, unit: 'CSS px' },
     minTransformSeparationPx: { min: 10, max: 200, unit: 'CSS px' },
     fistArmMs: { min: 50, max: 1000, unit: 'ms' },
-    shortDropoutMs: { min: 0, max: 250, unit: 'ms' },
-    reconnectDistancePx: { min: 0, max: 50, unit: 'CSS px' },
+    maxResultAgeMs: { min: 30, max: 500, unit: 'ms' },
     staleResultMs: { min: 30, max: 500, unit: 'ms' },
     trackExpiryMs: { min: 50, max: 2000, unit: 'ms' },
   },
@@ -380,6 +394,9 @@ export function validateConfig(candidate: unknown): ConfigResult {
   if (isRecord(candidate.gesture)) {
     checkBoolean('gesture.fistEraseEnabled', candidate.gesture.fistEraseEnabled, errors);
     const g = candidate.gesture;
+    if (typeof g.writeReleaseRatio === 'number' && typeof g.writeStartRatio === 'number' && !(g.writeReleaseRatio > g.writeStartRatio)) {
+      errors.push('gesture.writeReleaseRatio must exceed gesture.writeStartRatio (hysteresis)');
+    }
     if (typeof g.pinchUpRatio === 'number' && typeof g.pinchDownRatio === 'number') {
       if (!(g.pinchUpRatio > g.pinchDownRatio)) {
         errors.push('gesture.pinchUpRatio must exceed gesture.pinchDownRatio (hysteresis)');

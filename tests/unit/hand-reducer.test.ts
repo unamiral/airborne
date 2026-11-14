@@ -14,7 +14,9 @@ import { rng } from '../support/synthetic';
 
 const OPEN = 0.8;
 const PINCH = 0.12;
-const BAND = 0.32; // between down (0.25) and up (0.40)
+const NEAR = 0.24;
+const FAR = 0.8;
+const BAND = 0.42;
 
 interface H extends Partial<Omit<HandSample, 'pen'>> {
   x?: number;
@@ -28,6 +30,9 @@ function sample(id: number, h: H = {}): HandSample {
     usable: h.usable ?? true,
     ambiguous: h.ambiguous ?? false,
     pinchRatio: h.ratio ?? OPEN,
+    writingProximity: h.writingProximity === undefined
+      ? { ratio: h.ratio === PINCH ? NEAR : FAR, space: 'world' }
+      : h.writingProximity,
     pinchPose: h.pinchPose ?? true,
     fist: h.fist ?? false,
     pen: surfacePoint(h.x ?? 500, h.y ?? 300),
@@ -50,7 +55,7 @@ class Sim {
     return [...step.intents];
   }
 
-  frame(hands: HandSample[], dt = 33, expired: number[] = []): Intent[] {
+  frame(hands: HandSample[], dt = 50, expired: number[] = []): Intent[] {
     this.t += dt;
     return this.send({ kind: 'frame', t: this.t, hands, expired });
   }
@@ -65,175 +70,88 @@ class Sim {
   }
 }
 
-describe('pinch drawing (F09, F10)', () => {
-  it('starts a provisional stroke at the onset sample and confirms after 2 samples and 20 ms', () => {
+describe('writing proximity', () => {
+  const writer = (ratio: number, x: number, space: 'world' | 'image' = 'world'): HandSample =>
+    sample(1, { x, writingProximity: { ratio, space } });
+
+  it('preserves the first fingertip point after 50 ms of continuously close fingertips', () => {
     const s = new Sim();
     s.arm();
-    const first = s.frame([sample(1, { ratio: PINCH, x: 100, y: 100 })]);
-    expect(first).toEqual([{ kind: 'stroke-begin', owner: 1, at: surfacePoint(100, 100), t: s.t }]);
-    expect(modeLabel(s.state)).toBe('Draw');
-    const second = s.frame([sample(1, { ratio: PINCH, x: 105, y: 100 })]);
-    expect(second.map((i) => i.kind)).toEqual(['stroke-point', 'stroke-confirm']);
-    expect(s.state.mode.kind).toBe('drawing');
-  });
-
-  it('confirms by time and sample count, not render frames (60 Hz needs a third sample)', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH })], 16);
-    expect(s.frame([sample(1, { ratio: PINCH })], 16).map((i) => i.kind)).toEqual(['stroke-point']);
-    expect(s.frame([sample(1, { ratio: PINCH })], 16).map((i) => i.kind)).toEqual(['stroke-point', 'stroke-confirm']);
-  });
-
-  it('discards a one-sample false pinch without touching committed content', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH })]);
-    expect(s.frame([sample(1, { ratio: OPEN })]).map((i) => i.kind)).toEqual(['stroke-cancel']);
-    expect(s.kinds()).not.toContain('stroke-commit');
-  });
-
-  it('turns a short validated tap into a committed stroke (a dot)', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH, x: 200, y: 200 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 200.2, y: 200.1 })]);
-    expect(s.frame([sample(1, { ratio: OPEN, x: 230, y: 180 })]).map((i) => i.kind)).toEqual(['stroke-commit']);
-    // The opened hand's position (230,180) is never appended.
-    const points = s.log.filter((i) => i.kind === 'stroke-point' || i.kind === 'stroke-begin');
-    expect(points).toHaveLength(2);
-  });
-
-  it('ignores a hand that appears already pinched until it is seen open', () => {
-    const s = new Sim();
-    s.frame([sample(1, { ratio: PINCH })]);
-    s.frame([sample(1, { ratio: PINCH })]);
-    expect(s.log).toEqual([]);
-    s.frame([sample(1, { ratio: OPEN })]);
-    expect(s.frame([sample(1, { ratio: PINCH })]).map((i) => i.kind)).toEqual(['stroke-begin']);
-  });
-
-  it('uses hysteresis: ratios between thresholds do not end the stroke', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH })]);
-    s.frame([sample(1, { ratio: PINCH })]);
-    for (const r of [0.24, 0.3, 0.26, 0.38, 0.2, 0.39, 0.22]) s.frame([sample(1, { ratio: r, x: 500 + s.t / 10 })], 33);
-    expect(s.kinds()).not.toContain('stroke-commit');
-    expect(s.frame([sample(1, { ratio: 0.41 })]).map((i) => i.kind)).toContain('stroke-commit');
-  });
-
-  it('holds samples in the hysteresis band and drops them on release (no opening tail)', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH, x: 100 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 110 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 120 })]);
-    const opening = s.frame([sample(1, { ratio: BAND, x: 128, y: 290 })]);
-    expect(opening).toEqual([{ kind: 'stroke-preview', points: [surfacePoint(128, 290)] }]);
-    const released = s.frame([sample(1, { ratio: 0.6, x: 140, y: 270 })]);
-    expect(released.map((i) => i.kind)).toEqual(['stroke-commit']);
-    const appended = s.log.filter((i) => i.kind === 'stroke-point').map((i) => (i as { at: { x: number } }).at.x);
-    expect(appended).toEqual([110, 120]);
-  });
-
-  it('flushes held samples when the pinch tightens again or lingers in the band', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH, x: 100 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 110 })]);
-    s.frame([sample(1, { ratio: BAND, x: 120 })]);
-    const back = s.frame([sample(1, { ratio: PINCH, x: 130 })]);
-    expect(back.map((i) => i.kind)).toEqual(['stroke-point', 'stroke-preview', 'stroke-point']);
-    // Lingering light pinch: flushed after releaseHoldMs.
-    for (let i = 0; i < 6; i++) s.frame([sample(1, { ratio: BAND, x: 140 + i * 10 })]);
-    const xs = s.log.filter((i) => i.kind === 'stroke-point').map((i) => (i as { at: { x: number } }).at.x);
-    expect(xs).toContain(140);
-    expect(s.kinds()).not.toContain('stroke-commit');
-  });
-
-  it('requires a plausible pinch pose: thumb near index inside a fist does not draw', () => {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH, pinchPose: false })]);
-    s.frame([sample(1, { ratio: PINCH, pinchPose: false })]);
-    expect(s.log).toEqual([]);
-  });
-});
-
-describe('dropout and reacquisition (F19)', () => {
-  function drawing(): Sim {
-    const s = new Sim();
-    s.arm();
-    s.frame([sample(1, { ratio: PINCH, x: 100 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 104 })]);
-    s.frame([sample(1, { ratio: PINCH, x: 108 })]);
-    return s;
-  }
-
-  it('freezes immediately on loss and reconnects only close, fast, same identity, still pinched', () => {
-    const s = drawing();
-    expect(s.frame([])).toEqual([]);
-    expect(s.state.mode.kind).toBe('suspended');
-    expect(modeLabel(s.state)).toBe('Tracking lost');
-    const back = s.frame([sample(1, { ratio: PINCH, x: 113 })]); // 66 ms gap, 5 px away
-    expect(back.map((i) => i.kind)).toEqual(['stroke-point']);
-    expect(s.state.mode.kind).toBe('drawing');
-  });
-
-  for (const gap of [100, 250]) {
-    it(`closes the stroke after a ${gap} ms gap and does not bridge it`, () => {
-      const s = drawing();
-      s.frame([], gap - 33);
-      const back = s.frame([sample(1, { ratio: PINCH, x: 110 })], 33);
-      expect(back.map((i) => i.kind)).toContain('stroke-commit');
-      expect(back.map((i) => i.kind)).not.toContain('stroke-point');
-      // Still pinched after returning: no new stroke until released.
-      s.frame([sample(1, { ratio: PINCH, x: 112 })]);
-      expect(s.kinds().filter((k) => k === 'stroke-begin')).toHaveLength(1);
-    });
-  }
-
-  it('does not reconnect when the hand returns far away', () => {
-    const s = drawing();
-    s.frame([]);
-    const back = s.frame([sample(1, { ratio: PINCH, x: 160 })]);
-    expect(back.map((i) => i.kind)).toEqual(['stroke-commit']);
-    expect(s.state.mode).toEqual({ kind: 'await-release', waiting: [1] });
-  });
-
-  it('ends the stroke when the pinch was released during the gap', () => {
-    const s = drawing();
-    s.frame([]);
-    expect(s.frame([sample(1, { ratio: OPEN, x: 109 })]).map((i) => i.kind)).toEqual(['stroke-commit']);
-    expect(s.state.mode.kind).toBe('hover');
-  });
-
-  it('ends conservatively on identity ambiguity and requires reacquisition', () => {
-    const s = drawing();
-    expect(s.frame([sample(1, { ratio: PINCH, ambiguous: true, usable: false })]).map((i) => i.kind)).toEqual(['stroke-commit']);
-    s.frame([sample(1, { ratio: OPEN })]);
-    s.frame([sample(1, { ratio: OPEN })]);
-    expect(s.frame([sample(1, { ratio: PINCH })]).map((i) => i.kind)).toEqual(['stroke-begin']);
-  });
-
-  it('treats stale results as loss', () => {
-    const s = drawing();
-    s.send({ kind: 'loss', t: s.t + 40 });
-    expect(s.state.mode.kind).toBe('suspended');
-    s.send({ kind: 'loss', t: s.t + 140 });
-    expect(s.kinds()).toContain('stroke-commit');
-  });
-
-  it('stops at the reach edge instead of clamping a line along it', () => {
-    const s = drawing();
-    expect(s.frame([sample(1, { ratio: PINCH, x: 900, inReach: false, region: { kind: 'outside' } })]).map((i) => i.kind)).toEqual([
-      'stroke-commit',
+    expect(s.frame([writer(NEAR, 100)], 16)).toEqual([]);
+    const onsetT = s.t;
+    expect(s.frame([writer(NEAR, 104)], 33)).toEqual([]);
+    expect(s.frame([writer(NEAR, 108)], 16)).toEqual([]);
+    const start = s.frame([writer(NEAR, 109)], 1);
+    expect(start).toEqual([
+      { kind: 'stroke-begin', owner: 1, at: surfacePoint(100, 300), t: onsetT },
+      { kind: 'stroke-point', at: surfacePoint(104, 300), t: onsetT + 33 },
+      { kind: 'stroke-point', at: surfacePoint(108, 300), t: onsetT + 49 },
+      { kind: 'stroke-point', at: surfacePoint(109, 300), t: onsetT + 50 },
+      { kind: 'stroke-confirm' },
     ]);
-    // Re-entering while still pinched does not restart ink.
-    s.frame([sample(1, { ratio: PINCH, x: 500 })]);
-    expect(s.kinds().filter((k) => k === 'stroke-begin')).toHaveLength(1);
   });
+
+  it('ignores isolated close samples and restarts timing after leaving the start threshold', () => {
+    const s = new Sim();
+    s.arm();
+    s.frame([writer(NEAR, 100)]);
+    s.frame([writer(BAND, 130)], 40);
+    s.frame([writer(NEAR, 160)], 20);
+    expect(s.frame([writer(NEAR, 164)], 40)).toEqual([]);
+    expect(s.frame([writer(NEAR, 166)], 10)[0]).toMatchObject({ kind: 'stroke-begin', at: surfacePoint(160, 300) });
+  });
+
+  it('keeps ink continuous in the hysteresis band and stops at release without adding a tail', () => {
+    const s = new Sim();
+    s.arm();
+    s.frame([writer(NEAR, 100)]);
+    s.frame([writer(NEAR, 110)]);
+    expect(s.kinds(s.frame([writer(BAND, 120)]))).toEqual(['stroke-point']);
+    expect(s.kinds(s.frame([writer(DEFAULT_CONFIG.gesture.writeReleaseRatio, 150)]))).toEqual(['stroke-commit']);
+    expect(s.frame([writer(BAND, 180)])).toEqual([]);
+  });
+
+  it('requires a release after acquisition and ignores the old pinch and fist poses', () => {
+    const s = new Sim();
+    s.frame([writer(NEAR, 100)]);
+    s.frame([writer(NEAR, 100)]);
+    s.frame([writer(FAR, 100)]);
+    for (let i = 0; i < 4; i++) {
+      s.frame([sample(1, { ratio: PINCH, writingProximity: { ratio: FAR, space: 'world' } })]);
+      s.frame([sample(1, { fist: true, writingProximity: { ratio: NEAR, space: 'world' } })]);
+    }
+    expect(s.kinds()).not.toContain('stroke-begin');
+  });
+
+  it('can write from the image fallback and ends on a switch of coordinate space', () => {
+    const s = new Sim();
+    s.frame([writer(FAR, 100, 'image')]);
+    s.frame([writer(NEAR, 100, 'image')]);
+    expect(s.kinds(s.frame([writer(NEAR, 110, 'image')]))).toContain('stroke-confirm');
+    expect(s.kinds(s.frame([writer(NEAR, 120)]))).toEqual(['stroke-commit']);
+    expect(s.frame([writer(NEAR, 130)])).toEqual([]);
+  });
+
+  it.each(['missing', 'stale', 'unreliable', 'ambiguous', 'long interval'] as const)(
+    'commits at the last trusted point on %s tracking and requires release before a new stroke', (loss) => {
+      const s = new Sim();
+      s.arm();
+      s.frame([writer(NEAR, 100)]);
+      s.frame([writer(NEAR, 110)]);
+      let close: Intent[];
+      if (loss === 'missing') close = s.frame([]);
+      else if (loss === 'stale') close = s.send({ kind: 'loss', t: s.t + 20 });
+      else if (loss === 'unreliable') close = s.frame([sample(1, { usable: false, x: 200 })]);
+      else if (loss === 'ambiguous') close = s.frame([sample(1, { usable: false, ambiguous: true, x: 200 })]);
+      else close = s.frame([writer(NEAR, 200)], 120);
+      expect(s.kinds(close)).toEqual(['stroke-commit']);
+      expect(s.frame([writer(NEAR, 220)])).toEqual([]);
+      expect(s.frame([writer(NEAR, 230)])).toEqual([]);
+      s.frame([writer(FAR, 240)]);
+      s.frame([writer(NEAR, 250)]);
+      expect(s.frame([writer(NEAR, 260)])[0]).toMatchObject({ kind: 'stroke-begin', at: surfacePoint(250, 300) });
+    },
+  );
 });
 
 describe('hand-operated controls (F21)', () => {
@@ -260,7 +178,7 @@ describe('hand-operated controls (F21)', () => {
     expect(s.log).toEqual([]);
   });
 
-  it('a drawing pinch that crosses into the strip cannot activate controls until released', () => {
+  it('a writing gesture that crosses into the strip cannot activate controls until released', () => {
     const s = new Sim();
     s.arm();
     s.frame([sample(1, { ratio: PINCH })]);
@@ -284,7 +202,8 @@ describe('two-hand arbitration (F14)', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
     s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
-    const join = s.frame([sample(1, { ratio: PINCH, x: 303 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, x: 303 }), sample(2, { ratio: PINCH, x: 700 })]);
+    const join = s.frame([sample(1, { ratio: PINCH, x: 305 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(join.map((i) => i.kind)).toEqual(['stroke-cancel', 'transform-begin']);
     expect(s.kinds()).not.toContain('stroke-commit');
   });
@@ -293,13 +212,15 @@ describe('two-hand arbitration (F14)', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
     for (let i = 0; i < 12; i++) s.frame([sample(1, { ratio: PINCH, x: 300 + i * 6 }), sample(2, { ratio: OPEN, x: 700 })]);
-    const join = s.frame([sample(1, { ratio: PINCH, x: 372 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, x: 372 }), sample(2, { ratio: PINCH, x: 700 })]);
+    const join = s.frame([sample(1, { ratio: PINCH, x: 374 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(join.map((i) => i.kind)).toEqual(['stroke-commit', 'transform-begin']);
   });
 
-  it('starts transforming directly when both hands pinch in the same result', () => {
+  it('starts transforming without ink when both hands confirm together', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]).map((i) => i.kind)).toEqual([
       'transform-begin',
     ]);
@@ -313,8 +234,9 @@ describe('two-hand arbitration (F14)', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
     s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(s.frame([sample(1, { ratio: PINCH, x: 300 })]).map((i) => i.kind)).toEqual(['transform-end']);
-    expect(s.state.mode).toEqual({ kind: 'await-release', waiting: [1, 2] });
+    expect(s.state.mode).toEqual({ kind: 'await-release', waiting: [1, 2], writing: true });
     s.frame([sample(1, { ratio: OPEN, x: 300 })]);
     s.frame([sample(1, { ratio: PINCH, x: 300 })]);
     expect(s.kinds()).not.toContain('stroke-begin');
@@ -324,12 +246,14 @@ describe('two-hand arbitration (F14)', () => {
     const s = new Sim();
     s.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
     s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
+    s.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
     s.frame([sample(1, { ratio: PINCH, x: 300 })]);
     s.frame([sample(1, { ratio: OPEN, x: 300 })]);
     // Hand 2 expires after 250 ms absent: ownership ends.
     s.frame([sample(1, { ratio: OPEN, x: 300 })], 250, [2]);
     expect(s.state.mode.kind).toBe('hover');
-    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })]).map((i) => i.kind)).toEqual(['stroke-begin']);
+    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })])).toEqual([]);
+    expect(s.frame([sample(1, { ratio: PINCH, x: 300 })])[0]?.kind).toBe('stroke-begin');
   });
 
   it('ignores a second pinching hand that was never seen open (another person entering)', () => {
@@ -413,16 +337,18 @@ describe('pause and interruption (F25 subset)', () => {
     s.frame([sample(1, { ratio: PINCH })]);
     expect(s.kinds().filter((k) => k === 'stroke-begin')).toHaveLength(1);
     s.frame([sample(1, { ratio: OPEN })]);
-    expect(s.frame([sample(1, { ratio: PINCH })]).map((i) => i.kind)).toEqual(['stroke-begin']);
+    expect(s.frame([sample(1, { ratio: PINCH })])).toEqual([]);
+    expect(s.frame([sample(1, { ratio: PINCH })])[0]?.kind).toBe('stroke-begin');
   });
 
-  it('cancels a provisional stroke and ends erasing/transform on interrupt', () => {
+  it('discards unconfirmed ink and ends transforms on interrupt', () => {
     const a = new Sim();
     a.arm();
     a.frame([sample(1, { ratio: PINCH })]);
-    expect(a.send({ kind: 'interrupt', reason: 'blur', pause: true }).map((i) => i.kind)).toEqual(['stroke-cancel']);
+    expect(a.send({ kind: 'interrupt', reason: 'blur', pause: true })).toEqual([]);
     const b = new Sim();
     b.frame([sample(1, { ratio: OPEN, x: 300 }), sample(2, { ratio: OPEN, x: 700 })]);
+    b.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
     b.frame([sample(1, { ratio: PINCH, x: 300 }), sample(2, { ratio: PINCH, x: 700 })]);
     expect(b.send({ kind: 'interrupt', reason: 'resize', pause: false }).map((i) => i.kind)).toEqual(['transform-end']);
   });
@@ -459,7 +385,8 @@ describe('controls while paused', () => {
     s.frame([sample(1, { ratio: PINCH })]);
     expect(s.kinds()).toEqual(['control-activate']);
     s.frame([sample(1, { ratio: OPEN })]);
-    expect(s.frame([sample(1, { ratio: PINCH })]).map((i) => i.kind)).toEqual(['stroke-begin']);
+    expect(s.frame([sample(1, { ratio: PINCH })])).toEqual([]);
+    expect(s.frame([sample(1, { ratio: PINCH })])[0]?.kind).toBe('stroke-begin');
   });
 });
 
@@ -508,7 +435,6 @@ describe('determinism and invariants', () => {
             stroke = 'provisional';
             break;
           case 'stroke-point':
-          case 'stroke-preview':
             expect(stroke).not.toBe('none');
             break;
           case 'stroke-confirm':

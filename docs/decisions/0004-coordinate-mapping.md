@@ -1,6 +1,6 @@
 # 0004 — Coordinate mapping and hand identity
 
-Status: accepted (M1, 2026-11-14)
+Status: superseded for mapping. The full camera frame now maps to the full interaction surface; sensitivity applies a centered power curve while preserving frame edges. Axes scale independently when aspect ratios differ, so shapes can stretch. The original decision is retained below for historical context.
 
 ## Spaces
 

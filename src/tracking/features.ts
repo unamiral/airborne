@@ -2,7 +2,7 @@
  * Per-hand gesture features (plan §7, §8.1 steps 1 and 3, §9).
  *
  * Pen position and gesture evidence are computed separately: the pen is the
- * thumb/index tip midpoint in image coordinates, while pinch and fist
+ * index fingertip in image coordinates, while pose, pinch and fist
  * evidence come from per-hand world landmarks (meters, origin at the hand's
  * centre). World landmarks are only compared within one hand, never across
  * hands. All thresholds are configurable seeds, validated on synthetic and
@@ -42,6 +42,13 @@ export interface FingerCurl {
   readonly curled: boolean;
 }
 
+export interface WritingProximity {
+  readonly ratio: number;
+  readonly space: 'world' | 'image';
+  /** Thumb, index and middle extended and directed forward together. */
+  readonly aligned?: boolean;
+}
+
 export interface HandFeatures {
   readonly valid: boolean;
   readonly invalidReason: string | null;
@@ -50,8 +57,9 @@ export interface HandFeatures {
   /** Thumb/index proximity comes from a pinch, not from a closed fist. */
   readonly pinchPose: boolean;
   readonly fist: boolean;
+  readonly writingProximity: WritingProximity | null;
   readonly fingers: readonly FingerCurl[];
-  /** Thumb/index tip midpoint, unmirrored normalized camera coordinates. */
+  /** Index fingertip, unmirrored normalized camera coordinates. */
   readonly pen: CameraPoint;
   /** Palm centre (wrist + four MCPs), normalized camera coordinates. */
   readonly palm: CameraPoint;
@@ -82,6 +90,25 @@ function bend(a: Vec3, b: Vec3): number {
   if (na === 0 || nb === 0) return 0;
   const cos = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (na * nb);
   return (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
+}
+
+/** Detect three extended, forward-pointing digits. Ring and pinky are ignored. */
+function alignedWritingPose(point: (index: number) => Vec3, palmLength: number): boolean {
+  const digit = (joints: readonly number[]): Vec3 | null => {
+    let length = 0;
+    for (let i = 1; i < joints.length; i++) length += norm(sub(point(joints[i]!), point(joints[i - 1]!)));
+    const direction = sub(point(joints[joints.length - 1]!), point(joints[0]!));
+    const reach = norm(direction);
+    // Reject foreshortened or crumpled landmark chains.
+    return reach >= 0.22 * palmLength && reach >= 0.88 * length ? direction : null;
+  };
+  const index = digit([LM.INDEX_MCP, LM.INDEX_PIP, LM.INDEX_DIP, LM.INDEX_TIP]);
+  const middle = digit([LM.MIDDLE_MCP, LM.MIDDLE_PIP, LM.MIDDLE_DIP, LM.MIDDLE_TIP]);
+  const thumb = digit([LM.THUMB_MCP, LM.THUMB_IP, LM.THUMB_TIP]);
+  if (index === null || middle === null || thumb === null) return false;
+  const forward = sub(point(LM.MIDDLE_MCP), point(LM.WRIST));
+  return bend(forward, thumb) <= 50 && bend(forward, index) <= 45 && bend(forward, middle) <= 45 &&
+    bend(index, middle) <= 30 && bend(index, thumb) <= 35 && bend(middle, thumb) <= 35;
 }
 
 const PALM_POINTS = [LM.WRIST, LM.INDEX_MCP, LM.MIDDLE_MCP, LM.RING_MCP, LM.PINKY_MCP] as const;
@@ -122,10 +149,7 @@ export function extractFeatures(
 ): HandFeatures {
   const lm = hand.landmarks;
   const world = hand.world;
-  const pen = cameraPoint(
-    (lm[LM.THUMB_TIP * 3]! + lm[LM.INDEX_TIP * 3]!) / 2,
-    (lm[LM.THUMB_TIP * 3 + 1]! + lm[LM.INDEX_TIP * 3 + 1]!) / 2,
-  );
+  const pen = cameraPoint(lm[LM.INDEX_TIP * 3]!, lm[LM.INDEX_TIP * 3 + 1]!);
   let px = 0;
   let py = 0;
   for (const i of PALM_POINTS) {
@@ -142,25 +166,54 @@ export function extractFeatures(
     cameraHeight,
   );
   const palmScaleM = norm(sub(at(world, LM.MIDDLE_MCP), at(world, LM.WRIST)));
-  const pinchRatio = palmScaleM > 0 ? norm(sub(at(world, LM.THUMB_TIP), at(world, LM.INDEX_TIP))) / palmScaleM : Number.POSITIVE_INFINITY;
-  const fingers = fingerCurls(world, palmScaleM, config);
-  const fist = fingers.every((f) => f.curled);
-  const index = fingers[0]!;
-  const pinchPose = !index.curled && index.tipPalmRatio >= config.pinchIndexReachRatio;
+  const hasWorldPalm = palmScaleM >= config.minPalmScaleM && palmScaleM <= config.maxPalmScaleM;
+  const worldPinch = norm(sub(at(world, LM.THUMB_TIP), at(world, LM.INDEX_TIP)));
+  const pinchRatio = hasWorldPalm && Number.isFinite(worldPinch) ? worldPinch / palmScaleM : Infinity;
+  const fingers = Number.isFinite(pinchRatio) ? fingerCurls(world, palmScaleM, config) : [];
+  const fist = fingers.length > 0 && fingers.every((f) => f.curled);
+  const index = fingers[0];
+  const pinchPose = index !== undefined && !index.curled && index.tipPalmRatio >= config.pinchIndexReachRatio;
 
   let invalidReason: string | null = null;
-  if (![pen.x, pen.y, palm.x, palm.y, palmSizePx, palmScaleM, pinchRatio].every(Number.isFinite)) {
+  if (![pen.x, pen.y, palm.x, palm.y, palmSizePx].every(Number.isFinite)) {
     invalidReason = 'non-finite geometry';
-  } else if (palmScaleM < config.minPalmScaleM || palmScaleM > config.maxPalmScaleM) {
-    invalidReason = 'implausible palm scale';
   } else if (palmSizePx < config.minPalmSizePx) {
     invalidReason = 'hand too small';
+  }
+
+  let writingProximity: WritingProximity | null = null;
+  if (invalidReason === null) {
+    const worldDistance = norm(sub(at(world, LM.THUMB_TIP), at(world, LM.MIDDLE_TIP)));
+    if (hasWorldPalm && Number.isFinite(worldDistance) && worldDistance <= 3 * palmScaleM) {
+      writingProximity = {
+        ratio: worldDistance / palmScaleM,
+        space: 'world',
+        aligned: alignedWritingPose((index) => at(world, index), palmScaleM),
+      };
+    } else {
+      // Image distances use pixel aspect, including the palm denominator.
+      // Avoid using truncated tips for a projection-only estimate.
+      const [tx, ty] = at(lm, LM.THUMB_TIP);
+      const [mx, my] = at(lm, LM.MIDDLE_TIP);
+      if ([tx, ty, mx, my].every((value) => value >= 0 && value <= 1)) {
+        const imageDistance = cameraPixelDistance(tx, ty, mx, my, cameraWidth, cameraHeight);
+        writingProximity = {
+          ratio: imageDistance / palmSizePx,
+          space: 'image',
+          aligned: alignedWritingPose((index) => {
+            const [x, y] = at(lm, index);
+            return [x * cameraWidth, y * cameraHeight, 0];
+          }, palmSizePx),
+        };
+      }
+    }
   }
   return {
     valid: invalidReason === null,
     invalidReason,
     pinchRatio,
     pinchPose,
+    writingProximity,
     fist,
     fingers,
     pen,

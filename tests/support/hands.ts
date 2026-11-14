@@ -4,7 +4,7 @@
  * A simple kinematic model in meters (wrist→middle-MCP = 9 cm) with finger
  * flexion, a thumb that can be placed for a pinch, and a global rotation. The
  * image landmarks are an orthographic projection positioned so that the pen
- * point (thumb/index tip midpoint) lands at a requested camera location.
+ * point (index fingertip) lands at a requested camera location.
  * This is a test model, not a claim about real hand anatomy or detector output.
  */
 import type { HandPayload, Handedness } from '../../src/tracking/protocol';
@@ -23,8 +23,8 @@ export interface Pose {
   readonly middle: Curl;
   readonly ring: Curl;
   readonly pinky: Curl;
-  /** 'open' thumb, 'fist' thumb across the fingers, or a pinch with this ratio to the index tip. */
-  readonly thumb: 'open' | 'fist' | { readonly pinchRatio: number };
+  /** 'open' thumb, 'fist' thumb across the fingers, or a gap to the index or middle fingertip, in palm lengths. */
+  readonly thumb: 'open' | 'fist' | 'aligned' | { readonly pinchRatio: number } | { readonly writingRatio: number };
   /** Degrees. */
   readonly roll?: number;
   readonly pitch?: number;
@@ -38,6 +38,7 @@ const half: Curl = { mcp: 50, pip: 55, dip: 30 };
 const pinchIndex: Curl = { mcp: 35, pip: 40, dip: 20 };
 
 export const POSES = {
+  aligned: { index: straight, middle: straight, ring: straight, pinky: straight, thumb: 'aligned' } as Pose,
   open: { index: straight, middle: straight, ring: straight, pinky: straight, thumb: 'open' } as Pose,
   relaxed: { index: relaxed, middle: relaxed, ring: relaxed, pinky: relaxed, thumb: 'open' } as Pose,
   pinch: (ratio = 0.12): Pose => ({ index: pinchIndex, middle: relaxed, ring: relaxed, pinky: relaxed, thumb: { pinchRatio: ratio } }),
@@ -46,6 +47,7 @@ export const POSES = {
   fist: { index: curled, middle: curled, ring: curled, pinky: curled, thumb: 'fist' } as Pose,
   halfCurl: { index: half, middle: half, ring: half, pinky: half, thumb: 'open' } as Pose,
   pointing: { index: straight, middle: curled, ring: curled, pinky: curled, thumb: 'fist' } as Pose,
+  writing: (ratio = 0.24): Pose => ({ index: straight, middle: half, ring: relaxed, pinky: relaxed, thumb: { writingRatio: ratio } }),
 } as const;
 
 export function withRotation(pose: Pose, roll: number, pitch = 0, yaw = 0): Pose {
@@ -116,12 +118,16 @@ export function worldPose(pose: Pose): V3[] {
   let tip: V3;
   if (pose.thumb === 'open') {
     tip = [-0.075, -0.08, -0.02];
+  } else if (pose.thumb === 'aligned') {
+    tip = add(mcp, [-0.005, -0.073, 0]);
   } else if (pose.thumb === 'fist') {
     tip = [-0.004, -0.072, -0.042];
   } else {
-    // Thumb tip exactly pinchRatio * palm length from the index tip.
+    // Place the thumb at the requested distance from the target fingertip.
     const dir: V3 = [-0.85, 0.5, -0.15];
-    tip = add(indexTip, scale(dir, (pose.thumb.pinchRatio * PALM) / Math.hypot(...dir)));
+    const target = 'writingRatio' in pose.thumb ? out[12]! : indexTip;
+    const ratio = 'writingRatio' in pose.thumb ? pose.thumb.writingRatio : pose.thumb.pinchRatio;
+    tip = add(target, scale(dir, (ratio * PALM) / Math.hypot(...dir)));
   }
   const ip = add(scale(add(mcp, tip), 0.5), [-0.008, 0.004, -0.006]);
   out[1] = cmc;
@@ -132,7 +138,7 @@ export function worldPose(pose: Pose): V3[] {
 }
 
 export interface PlaceOptions {
-  /** Desired pen point (thumb/index midpoint), normalized unmirrored camera coords. */
+  /** Desired pen point (index fingertip), normalized unmirrored camera coords. */
   readonly penU: number;
   readonly penV: number;
   /** Wrist→middle-MCP length in camera pixels (before rotation foreshortening). */
@@ -150,7 +156,8 @@ export function handAt(pose: Pose, o: PlaceOptions): HandPayload {
   const ch = o.cameraHeight ?? 480;
   const s = (o.palmPx ?? 70) / PALM;
   const world = worldPose(pose);
-  const penWorld = scale(add(world[4]!, world[8]!), 0.5);
+  if (o.handedness === 'Left') for (const p of world) p[0] = -p[0];
+  const penWorld = world[8]!;
   const random = rng(o.seed ?? 1);
   const g = gaussian(random);
   const n = o.noisePx ?? 0;

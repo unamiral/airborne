@@ -21,39 +21,25 @@ describe('camera → surface mapping (F06)', () => {
     expect(m.toSurface(0.4, 0.5).point.x).toBeGreaterThan(m.toSurface(0.6, 0.5).point.x);
   });
 
-  it('is isotropic: equal camera-pixel motion gives equal surface motion on both axes', () => {
-    const a = m.toSurface(0.5, 0.5).point;
-    const bx = m.toSurface(0.5 - 10 / 640, 0.5).point; // 10 camera px horizontally
-    const by = m.toSurface(0.5, 0.5 + 10 / 480).point; // 10 camera px vertically
-    expect(Math.abs(bx.x - a.x)).toBeCloseTo(Math.abs(by.y - a.y), 9);
-    expect(m.cameraLengthToSurface(10)).toBeCloseTo(Math.abs(bx.x - a.x), 9);
+  it('maps every camera corner onto the surface at every sensitivity', () => {
+    for (const reach of [0.5, 0.7, 0.9]) {
+      const mapping = new SurfaceMapping({ cameraWidth: 640, cameraHeight: 480, surfaceWidth: 1280, surfaceHeight: 720, reach });
+      expect(mapping.rect).toEqual({ u0: 0, u1: 1, v0: 0, v1: 1 });
+      for (const [u, v, x, y] of [[0, 0, 1280, 0], [1, 0, 0, 0], [0, 1, 1280, 720], [1, 1, 0, 720]]) {
+        const result = mapping.toSurface(u!, v!);
+        expect(result.inReach).toBe(true);
+        expect(result.point.x).toBeCloseTo(x!, 9);
+        expect(result.point.y).toBeCloseTo(y!, 9);
+      }
+    }
   });
 
-  it('uses the central reach fraction of camera width when the surface is wider than the camera', () => {
-    expect(m.rect.u1 - m.rect.u0).toBeCloseTo(0.7, 9);
-    // Height follows the surface aspect: 448 px wide * 720/1280 = 252 px of 480.
-    expect(m.rect.v1 - m.rect.v0).toBeCloseTo(252 / 480, 9);
-  });
-
-  it('fits by height for tall surfaces and 16:9 cameras', () => {
-    const tall = new SurfaceMapping({ cameraWidth: 1280, cameraHeight: 720, surfaceWidth: 600, surfaceHeight: 900, reach: 0.7 });
-    expect(tall.rect.v1 - tall.rect.v0).toBeCloseTo(0.7, 9);
-    const w = (tall.rect.u1 - tall.rect.u0) * 1280;
-    const h = (tall.rect.v1 - tall.rect.v0) * 720;
-    expect(w / h).toBeCloseTo(600 / 900, 9);
-  });
-
-  it('reports out-of-reach positions without clamping them to the edge', () => {
-    const out = m.toSurface(0.02, 0.5);
-    expect(out.inReach).toBe(false);
-    expect(out.point.x).toBeGreaterThan(1280);
-    expect(m.toSurface(0.5, 0.5).inReach).toBe(true);
-  });
-
-  it('honours the reach setting range', () => {
-    const near = new SurfaceMapping({ cameraWidth: 640, cameraHeight: 480, surfaceWidth: 1280, surfaceHeight: 720, reach: 0.5 });
-    const far = new SurfaceMapping({ cameraWidth: 640, cameraHeight: 480, surfaceWidth: 1280, surfaceHeight: 720, reach: 0.9 });
-    expect(near.scale).toBeGreaterThan(far.scale);
+  it('changes sensitivity near the centre without changing the capture area', () => {
+    const low = new SurfaceMapping({ cameraWidth: 640, cameraHeight: 480, surfaceWidth: 1280, surfaceHeight: 720, reach: 0.9 });
+    const high = new SurfaceMapping({ cameraWidth: 640, cameraHeight: 480, surfaceWidth: 1280, surfaceHeight: 720, reach: 0.5 });
+    expect(Math.abs(low.toSurface(0.45, 0.5).point.x - 640)).toBeLessThan(Math.abs(high.toSurface(0.45, 0.5).point.x - 640));
+    expect(low.toSurface(-0.01, 0.5).inReach).toBe(false);
+    expect(low.toSurface(0.5, 1.01).inReach).toBe(false);
     expect(() => new SurfaceMapping({ cameraWidth: 0, cameraHeight: 480, surfaceWidth: 1, surfaceHeight: 1, reach: 0.7 })).toThrow();
   });
 

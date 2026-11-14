@@ -28,6 +28,12 @@ describe('worker protocol validation', () => {
     }
   });
 
+  it('accepts image landmarks when the worker has no world landmarks', () => {
+    const parsed = parseWorkerMessage(result({ hands: [{ ...hand(), world: [] }] }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok && parsed.message.type === 'result') expect(parsed.message.hands[0]!.world).toEqual([]);
+  });
+
   it('rejects a result with any non-finite landmark', () => {
     const bad = hand();
     bad.landmarks[10] = Number.NaN;

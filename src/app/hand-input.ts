@@ -234,10 +234,10 @@ export class HandInput {
       if (this.stateValue.paused) cursorMode = 'blocked';
       else if (mode.kind === 'transforming' && (mode.a === h.id || mode.b === h.id)) cursorMode = 'move';
       else if (mode.kind === 'drawing' && mode.owner === h.id) cursorMode = 'draw';
-      else if (mode.kind === 'pinch-candidate' && mode.owner === h.id) cursorMode = 'pinch';
+      else if (mode.kind === 'write-candidate' && mode.owner === h.id) cursorMode = 'pinch';
       else if (mode.kind === 'erase-arming' && mode.owner === h.id) cursorMode = 'erase-arming';
       else if (mode.kind === 'erasing' && mode.owner === h.id) cursorMode = 'erase';
-      else if (flags === undefined || !flags.armed || (flags.held && flags.pinched) || !h.usable) cursorMode = 'blocked';
+      else if (flags === undefined || !flags.writeArmed || !h.usable) cursorMode = 'blocked';
       out.push({
         id: h.id,
         x: p.x,
@@ -248,10 +248,6 @@ export class HandInput {
         progress: this.armProgress,
         eraserRadius: config.eraserRadiusPx,
       });
-    }
-    if (mode.kind === 'suspended') {
-      const p = surfaceToBoard(mode.last, board);
-      out.push({ id: -1, x: p.x, y: p.y, color: c.color, diameter: c.widthPx, mode: 'lost', progress: 0, eraserRadius: 0 });
     }
     return out;
   }

@@ -10,6 +10,7 @@ import type { BoardDocument } from './document';
 import { strokeBytes, type Stroke } from './stroke';
 
 export type Command =
+  | { readonly kind: 'replace'; readonly strokes: readonly Stroke[]; readonly originals: readonly Stroke[] }
   | { readonly kind: 'add'; readonly strokes: readonly Stroke[] }
   | { readonly kind: 'remove'; readonly strokes: readonly Stroke[] }
   | { readonly kind: 'clear'; readonly strokes: readonly Stroke[] };
@@ -22,11 +23,16 @@ export interface HistoryLimits {
 function payload(command: Command): number {
   let bytes = 64;
   for (const s of command.strokes) bytes += strokeBytes(s);
+  if (command.kind === 'replace') for (const s of command.originals) bytes += strokeBytes(s);
   return bytes;
 }
 
 function apply(doc: BoardDocument, command: Command): void {
   switch (command.kind) {
+    case 'replace':
+      doc.remove(new Set(command.originals.map((s) => s.id)));
+      doc.insert(command.strokes);
+      return;
     case 'add':
       doc.insert(command.strokes);
       return;
@@ -39,6 +45,10 @@ function apply(doc: BoardDocument, command: Command): void {
 
 function revert(doc: BoardDocument, command: Command): void {
   switch (command.kind) {
+    case 'replace':
+      doc.remove(new Set(command.strokes.map((s) => s.id)));
+      doc.insert(command.originals);
+      return;
     case 'add':
       doc.remove(new Set(command.strokes.map((s) => s.id)));
       return;

@@ -4,13 +4,15 @@
  * Buttons double as hand targets; the slider and select serve pointer and
  * keyboard users.
  */
-import type { StabilizerPreset } from '../app/config';
+import { CONFIG_BOUNDS, type StabilizerPreset } from '../app/config';
 import type { CameraDevice } from '../camera/camera-source';
 import { el, setText } from './dom';
 
 export interface SettingsValues {
   readonly stabilizer: StabilizerPreset;
   readonly reach: number;
+  readonly writeStartRatio: number;
+  readonly writeReleaseRatio: number;
   readonly fistErase: boolean;
   readonly preview: boolean;
   readonly cameras: readonly CameraDevice[];
@@ -20,12 +22,15 @@ export interface SettingsValues {
 export interface SettingsHandlers {
   readonly setStabilizer: (preset: StabilizerPreset) => void;
   readonly setReach: (reach: number) => void;
+  readonly setWritingDistance: (key: WritingDistanceKey, ratio: number) => void;
   readonly setFistErase: (enabled: boolean) => void;
   readonly setPreview: (visible: boolean) => void;
   readonly setCamera: (deviceId: string) => void;
   readonly resetDefaults: () => void;
   readonly onClose: () => void;
 }
+
+type WritingDistanceKey = 'writeStartRatio' | 'writeReleaseRatio';
 
 const PRESETS: ReadonlyArray<{ id: StabilizerPreset; name: string; help: string }> = [
   { id: 'light', name: 'Light', help: 'Follows your hand closely; small shakes show.' },
@@ -38,6 +43,8 @@ export class SettingsDialog {
   private readonly presetButtons = new Map<StabilizerPreset, HTMLButtonElement>();
   private readonly reachInput: HTMLInputElement;
   private readonly reachValue: HTMLElement;
+  private readonly writeStart: HTMLInputElement;
+  private readonly writeRelease: HTMLInputElement;
   private readonly fistSwitch: HTMLButtonElement;
   private readonly previewSwitch: HTMLButtonElement;
   private readonly cameraSelect: HTMLSelectElement;
@@ -55,13 +62,25 @@ export class SettingsDialog {
       presetRow.append(b);
     }
 
-    this.reachInput = el('input', { type: 'range', min: 50, max: 90, step: 5, id: 'reach-input', 'aria-describedby': 'reach-help' });
+    this.reachInput = el('input', { type: 'range', min: 78, max: 140, step: 1, id: 'reach-input', 'aria-describedby': 'reach-help' });
     this.reachValue = el('output', { for: 'reach-input' });
-    this.reachInput.addEventListener('input', () => handlers.setReach(Number(this.reachInput.value) / 100));
-    const less = el('button', { type: 'button', class: 'secondary small', 'data-hand-target': 'reach-less', 'aria-label': 'Less hand movement' }, ['−']);
-    const more = el('button', { type: 'button', class: 'secondary small', 'data-hand-target': 'reach-more', 'aria-label': 'More hand movement' }, ['+']);
-    less.addEventListener('click', () => this.stepReach(-0.05));
-    more.addEventListener('click', () => this.stepReach(0.05));
+    this.reachInput.addEventListener('input', () => handlers.setReach(Math.max(0.5, Math.min(0.9, 70 / Number(this.reachInput.value)))));
+    const less = el('button', { type: 'button', class: 'secondary small', 'data-hand-target': 'reach-less', 'aria-label': 'Lower sensitivity' }, ['−']);
+    const more = el('button', { type: 'button', class: 'secondary small', 'data-hand-target': 'reach-more', 'aria-label': 'Higher sensitivity' }, ['+']);
+    less.addEventListener('click', () => this.stepReach(0.05));
+    more.addEventListener('click', () => this.stepReach(-0.05));
+
+    const writingDistance = (id: string, key: WritingDistanceKey): HTMLInputElement => {
+      const { min, max } = CONFIG_BOUNDS.gesture[key];
+      const input = el('input', { type: 'number', id, min, max, step: 0.01, 'aria-describedby': 'write-distance-help' });
+      input.addEventListener('change', () => {
+        if (input.checkValidity() && Number.isFinite(input.valueAsNumber)) handlers.setWritingDistance(key, input.valueAsNumber);
+        if (this.values !== null) input.value = String(this.values[key]);
+      });
+      return input;
+    };
+    this.writeStart = writingDistance('write-start', 'writeStartRatio');
+    this.writeRelease = writingDistance('write-release', 'writeReleaseRatio');
 
     const makeSwitch = (target: string, label: string, onToggle: (value: boolean) => void): HTMLButtonElement => {
       const b = el('button', { type: 'button', role: 'switch', class: 'switch', 'aria-checked': 'false', 'data-hand-target': target }, [label]);
@@ -85,9 +104,15 @@ export class SettingsDialog {
       el('h2', { id: 'settings-title' }, ['Settings']),
       el('h3', { id: 'stab-label' }, ['Hand steadiness']),
       presetRow,
-      el('h3', {}, [el('label', { for: 'reach-input' }, ['Reach'])]),
-      el('p', { id: 'reach-help', class: 'help' }, ['How far your hand moves to cross the board. Less reach means smaller movements.']),
+      el('h3', {}, [el('label', { for: 'reach-input' }, ['Sensitivity'])]),
+      el('p', { id: 'reach-help', class: 'help' }, ['Lower sensitivity gives finer control near the center. The entire camera view remains active.']),
       el('div', { class: 'reach-row' }, [less, this.reachInput, more, this.reachValue]),
+      el('h3', {}, ['Writing gesture']),
+      el('p', { id: 'write-distance-help', class: 'help' }, ['These distances control the close-fingertip gesture. The extended-finger pose uses finger direction. Distances are measured in palm lengths, and release must be higher than start.']),
+      el('div', { class: 'switch-row' }, [
+        el('label', { for: 'write-start' }, ['Start distance ', this.writeStart]),
+        el('label', { for: 'write-release' }, ['Release distance ', this.writeRelease]),
+      ]),
       el('h3', {}, ['Gestures and camera']),
       el('div', { class: 'switch-row' }, [this.fistSwitch, this.previewSwitch]),
       el('label', { for: 'camera-select', class: 'help' }, ['Camera']),
@@ -118,9 +143,11 @@ export class SettingsDialog {
   update(values: SettingsValues): void {
     this.values = values;
     for (const [id, b] of this.presetButtons) b.setAttribute('aria-pressed', String(id === values.stabilizer));
-    const pct = Math.round(values.reach * 100);
+    const pct = Math.round(70 / values.reach);
     this.reachInput.value = String(pct);
-    setText(this.reachValue, `${pct}% of the camera view`);
+    setText(this.reachValue, `${pct}%`);
+    this.writeStart.value = String(values.writeStartRatio);
+    this.writeRelease.value = String(values.writeReleaseRatio);
     this.fistSwitch.setAttribute('aria-checked', String(values.fistErase));
     this.previewSwitch.setAttribute('aria-checked', String(values.preview));
     const options = values.cameras.length === 0 ? [{ deviceId: '', label: 'Start the camera to choose' }] : values.cameras;
@@ -139,8 +166,8 @@ export class SettingsDialog {
   /** Hand activation of a settings target. */
   activate(target: string): boolean {
     if (target === 'settings-close') this.close();
-    else if (target === 'reach-less') this.stepReach(-0.05);
-    else if (target === 'reach-more') this.stepReach(0.05);
+    else if (target === 'reach-less') this.stepReach(0.05);
+    else if (target === 'reach-more') this.stepReach(-0.05);
     else if (target === 'fist-toggle') this.handlers.setFistErase(!(this.values?.fistErase ?? true));
     else if (target === 'preview-toggle') this.handlers.setPreview(!(this.values?.preview ?? true));
     else if (target.startsWith('preset-')) {

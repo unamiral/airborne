@@ -41,6 +41,8 @@ export type Command =
   | { readonly kind: 'reset' }
   | { readonly kind: 'pause' }
   | { readonly kind: 'export' }
+  | { readonly kind: 'interpret' }
+  | { readonly kind: 'beautify' }
   | { readonly kind: 'settings' }
   | { readonly kind: 'help' };
 
@@ -68,6 +70,8 @@ export function commandForTarget(id: string): Command | null {
     case 'reset':
     case 'pause':
     case 'export':
+    case 'interpret':
+    case 'beautify':
     case 'settings':
     case 'help':
       return { kind: id };
@@ -142,6 +146,8 @@ export class Toolbar {
       add('redo', toolButton('redo', 'Redo', ICONS.redo, 'Redo')),
       add('clear', toolButton('clear', 'Clear board…', ICONS.clear, 'Clear')),
       add('export', toolButton('export', 'Export PNG', ICONS.export, 'Export')),
+      add('interpret', toolButton('interpret', 'Interpret handwriting', ICONS.pen, 'Text')),
+      add('beautify', toolButton('beautify', 'Clean up handwriting', ICONS.pen, 'Clean')),
     ];
     const view = [
       add('fit', toolButton('fit', 'Fit board to ink', ICONS.fit, 'Fit')),

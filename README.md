@@ -3,8 +3,8 @@
 A lightweight browser whiteboard for writing, sketching, and explaining with a
 laptop webcam and bare hands, or with a mouse or trackpad.
 
-- **Pinch** thumb and index finger to draw; open the hand to stop.
-- **Pinch with both hands** to move and zoom the board.
+- **Extend your thumb, index and middle finger in roughly the same direction** and draw with your index fingertip. Angle your thumb away to stop. The close-fingertip gesture also works.
+- **Use the writing gesture with both hands** to move and zoom the board.
 - **Hold a fist** until the ring fills, then sweep to erase whole strokes.
 - **Pinch on a control** in the left strip to use it (one action per pinch).
 
@@ -75,10 +75,10 @@ rasterizer and must not be used for GPU numbers.
 
 | | Hands | Mouse / trackpad | Keyboard |
 |---|---|---|---|
-| Draw | Pinch, move, open | Drag with the pen tool | – |
-| Dot | Short pinch tap | Click | – |
-| Move board | Pinch both hands, move together | Hold Space and drag, middle button, or Move tool | – |
-| Zoom | Pinch both hands, move apart/together | Wheel or trackpad pinch (anchored at the pointer) | – |
+| Draw | Thumb, index and middle aligned, draw with index, then angle thumb away | Drag with the pen tool | – |
+| Dot | Brief writing pose | Click | – |
+| Move board | Writing pose on both hands, move together | Hold Space and drag, middle button, or Move tool | – |
+| Zoom | Writing pose on both hands, move apart/together | Wheel or trackpad pinch (anchored at the pointer) | – |
 | Erase | Hold a fist ~0.2 s, then sweep | Eraser tool and drag | – |
 | Undo / redo | Pinch the Undo / Redo buttons | Buttons | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z; with the board focused also Z / Shift+Z |
 | Clear | Pinch Clear, release, pinch “Clear board” | Clear → Clear board | C (board focused) → dialog |
@@ -125,10 +125,10 @@ gzip or brotli: the cold camera-mode payload is 9.6 MiB gzip / 8.0 MiB brotli
 
 1. Open the app in Chrome, press **Start camera**, allow the camera.
 2. Wait for “Tracking on this device”; accept or skip the practice offer.
-3. Hold one hand up, open; watch the hover ring follow the thumb/index midpoint.
-4. Pinch and write “1 + 1”; open the hand between strokes.
+3. Hold one hand up, open; watch the hover ring follow the index fingertip.
+4. Extend your thumb, index and middle finger together and write “1 + 1”. Angle your thumb away between strokes.
 5. Pinch the **Red** swatch, release, write “= 2”.
-6. Pinch with both hands and spread them to zoom; release both.
+6. Use the writing gesture with both hands and spread your hands to zoom.
 7. Hold a fist over the “2” until the ring fills, sweep across it, open.
 8. Pinch **Undo** to bring it back; pinch **Export** (or click) to save a PNG.
 
@@ -168,3 +168,40 @@ An automated version of this script runs in `tests/e2e/bench/release.spec.ts`.
   the file); the unmodified reference is used as a test oracle in
   `tests/reference/`.
 - Test photos in `tests/fixtures/images/`: MediaPipe test assets, Apache-2.0.
+
+## Handwriting cleanup
+
+Choose **Clean** to apply an undoable cleanup to all board ink. Light applies a
+bounded binomial smoothing to sampled stroke points, preserving endpoints,
+marked corners, dots and stroke boundaries. Smooth and align additionally
+nudges the baselines of simple, separated clusters when their sizes and
+bottoms are consistent. It deliberately skips baseline correction for
+ambiguous layouts. Review the result and use Undo to restore the original.
+Cleanup is opt-in because diagrams, math, cursive and multi-stroke characters
+cannot be reliably classified from geometry alone. It does not recognize or
+reconstruct letter shapes, normalize spacing or slant, or automatically infer
+words. The existing One Euro filter, jump detection, and incremental renderer
+continue to handle live input. No recognition model or external service is
+required for cleanup. There is no evidence yet that it improves actual
+handwriting legibility; real-user and real-camera evaluation is needed.
+
+
+### Tracking and restyle limitations
+
+The extended-finger pose checks the direction and straightness of the thumb, index
+and middle finger. Ring and pinky positions are unrestricted. The close-fingertip
+gesture uses thumb-to-middle fingertip distance divided by wrist-to-middle-knuckle
+distance. MediaPipe world landmarks are preferred, with aspect-corrected image
+coordinates as a fallback. Angled or partly hidden hands can still affect the
+estimate. Settings lets you tune both distances. The defaults are 0.32 palm
+lengths to start and 0.55 to release. Start requires 50 ms inside the threshold.
+Tracking loss ends the stroke, and returning with the gesture held cannot restart it.
+
+A candidate for future testing is the larger sparse hand landmark model in
+[WebGPU Vision](https://github.com/Sonified/webgpu-vision). Its authors report
+better thumb tracking, but this application needs compatible 3D world landmarks,
+a reliable multi-hand pipeline and measurements on its target hardware before
+it can safely replace MediaPipe. The current model has not been replaced.
+
+Cleanup remains geometric: it smooths ink, not the underlying letter shapes.
+It does not implement Goodnotes Restyle or infer what the writing says.

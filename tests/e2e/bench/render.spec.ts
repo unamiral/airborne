@@ -6,7 +6,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
-import { hover, pinchMove, scenario } from '../../support/scenarios';
+import { hover, writeMove, scenario } from '../../support/scenarios';
 import { drawWithMouse } from '../support';
 
 async function open(page: Page): Promise<void> {
@@ -177,8 +177,8 @@ test('large rebuilds are chunked and never show a blank frame (F29, normal workl
 test('two-hand zoom replay: smooth scale, no phantom strokes, consistent cache (F14, F15)', async ({ page }) => {
   await open(page);
   const record = scenario('zoom anchor', [
-    { phases: [hover(300, 500, 360), pinchMove(600, 500, 360, 430, 330), hover(200, 430, 330)] },
-    { phases: [hover(300, 800, 360), pinchMove(600, 800, 360, 900, 410), hover(200, 900, 410)], handedness: 'Left' },
+    { phases: [hover(300, 500, 360), writeMove(600, 500, 360, 430, 330), hover(200, 430, 330)] },
+    { phases: [hover(300, 800, 360), writeMove(600, 800, 360, 900, 410), hover(200, 900, 410)], handedness: 'Left' },
   ], { strokes: 0 });
   const result = await page.evaluate(async (r) => {
     const air = window.__air!;

@@ -167,13 +167,14 @@ function flatten(points: ReadonlyArray<{ x: number; y: number; z: number }>): nu
 
 function toPayload(result: HandLandmarkerResult): HandPayload[] {
   const hands: HandPayload[] = [];
-  const count = Math.min(result.landmarks.length, result.worldLandmarks.length, 2);
+  const count = Math.min(result.landmarks.length, 2);
   for (let i = 0; i < count; i++) {
     const category = result.handedness[i]?.[0];
     const name = category?.categoryName;
+    const world = flatten(result.worldLandmarks[i] ?? []);
     hands.push({
       landmarks: flatten(result.landmarks[i] ?? []),
-      world: flatten(result.worldLandmarks[i] ?? []),
+      world: world.every(Number.isFinite) ? world : [],
       handedness: name === 'Left' || name === 'Right' ? name : 'Unknown',
       handednessScore: category?.score ?? 0,
     });

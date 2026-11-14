@@ -49,6 +49,15 @@ describe('features on real model landmarks', () => {
     for (const f of features('right_hands.jpg')) expect(f.pinchRatio).toBeGreaterThan(DEFAULT_CONFIG.gesture.pinchUpRatio);
   });
 
+  it('keeps the open-hand, pointing, and victory fixtures outside the default writing start distance', () => {
+    for (const image of ['right_hands.jpg', 'pointing_up.jpg', 'victory.jpg']) {
+      for (const f of features(image)) {
+        expect(f.writingProximity?.ratio, image).toBeGreaterThan(DEFAULT_CONFIG.gesture.writeStartRatio);
+        expect(f.writingProximity?.aligned, image).toBe(false);
+      }
+    }
+  });
+
   it('documents a known consequence: a thumbs-up counts as a fist (four curled fingers)', () => {
     const [f] = features('thumb_up.jpg');
     expect(f!.fist).toBe(true);

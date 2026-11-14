@@ -6,8 +6,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
 import { POSES } from '../../support/hands';
-import { hover, move, pinchAt, pinchMove, scenario, still, type Phase } from '../../support/scenarios';
+import { hover, move, writeMove, scenario, still, type Phase } from '../../support/scenarios';
 import { drawWithMouse, inkPixels } from '../support';
+
+const controlAt = (ms: number, x: number, y: number): Phase => ({ ms, pose: POSES.pinch(), path: still(x, y) });
 
 async function open(page: Page): Promise<void> {
   await page.goto('./?hud=0');
@@ -36,7 +38,7 @@ async function play(page: Page, phases: Phase[]): Promise<void> {
 test('a pinch on a color swatch selects it once; the held pinch never draws (F21)', async ({ page }) => {
   await open(page);
   const red = await centre(page, '[data-hand-target="color-red"]');
-  await play(page, [hover(300, red.x, red.y), pinchAt(300, red.x, red.y), pinchMove(400, red.x, red.y, 600, 300), hover(300, 600, 300)]);
+  await play(page, [hover(300, red.x, red.y), controlAt(300, red.x, red.y), { ms: 400, pose: POSES.pinch(), path: move(red.x, red.y, 600, 300) }, hover(300, 600, 300)]);
   await expect(page.getByRole('button', { name: 'Red ink' })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(0);
 });
@@ -46,7 +48,7 @@ test('a control that becomes enabled after startup is reachable by hand (regress
   // Undo starts disabled; drawing enables it after the hand layout was first computed.
   await drawWithMouse(page, [[200, 200], [500, 260]]);
   const undo = await centre(page, '[data-hand-target="undo"]');
-  await play(page, [hover(300, undo.x, undo.y), pinchAt(250, undo.x, undo.y), hover(250, undo.x, undo.y)]);
+  await play(page, [hover(300, undo.x, undo.y), controlAt(250, undo.x, undo.y), hover(250, undo.x, undo.y)]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(0);
 });
 
@@ -61,7 +63,7 @@ test('clearing by hand needs a second, separate pinch on the confirmation (F23)'
   await page.keyboard.press('Escape');
   await play(page, [
     hover(300, clear.x, clear.y),
-    pinchAt(200, clear.x, clear.y),
+    controlAt(200, clear.x, clear.y),
     // Same pinch held onto the confirmation button: must not clear.
     { ms: 400, pose: POSES.pinch(0.1), path: move(clear.x, clear.y, confirm.x, confirm.y) },
     { ms: 300, pose: POSES.pinch(0.1), path: still(confirm.x, confirm.y) },
@@ -69,7 +71,7 @@ test('clearing by hand needs a second, separate pinch on the confirmation (F23)'
   await expect(page.getByRole('alertdialog')).toBeVisible();
   expect(await inkPixels(page)).toBe(ink);
   // Release, then a new pinch confirms.
-  await play(page, [hover(300, confirm.x, confirm.y), pinchAt(200, confirm.x, confirm.y), hover(200, confirm.x, confirm.y)]);
+  await play(page, [hover(300, confirm.x, confirm.y), controlAt(200, confirm.x, confirm.y), hover(200, confirm.x, confirm.y)]);
   await expect(page.getByRole('alertdialog')).toBeHidden();
   await expect.poll(() => inkPixels(page)).toBe(0);
 });
@@ -77,14 +79,14 @@ test('clearing by hand needs a second, separate pinch on the confirmation (F23)'
 test('a hand can pause and resume; paused hands never draw (F25)', async ({ page }) => {
   await open(page);
   const pauseBtn = await centre(page, '[data-hand-target="pause"]');
-  await play(page, [hover(300, pauseBtn.x, pauseBtn.y), pinchAt(200, pauseBtn.x, pauseBtn.y), hover(200, pauseBtn.x, pauseBtn.y)]);
+  await play(page, [hover(300, pauseBtn.x, pauseBtn.y), controlAt(200, pauseBtn.x, pauseBtn.y), hover(200, pauseBtn.x, pauseBtn.y)]);
   await expect(page.locator('.mode-chip')).toHaveText('Paused');
-  await play(page, [hover(300, 600, 300), pinchMove(500, 600, 300, 800, 350), hover(200, 800, 350)]);
+  await play(page, [hover(300, 600, 300), writeMove(500, 600, 300, 800, 350), hover(200, 800, 350)]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(0);
   // replay() resets tracks; pause persists and Resume is reachable by hand.
-  await play(page, [hover(300, pauseBtn.x, pauseBtn.y), pinchAt(200, pauseBtn.x, pauseBtn.y), hover(300, pauseBtn.x, pauseBtn.y)]);
+  await play(page, [hover(300, pauseBtn.x, pauseBtn.y), controlAt(200, pauseBtn.x, pauseBtn.y), hover(300, pauseBtn.x, pauseBtn.y)]);
   await expect(page.getByRole('button', { name: 'Pause hand input' })).toHaveAttribute('aria-pressed', 'false');
-  await play(page, [hover(300, 600, 300), pinchMove(500, 600, 300, 800, 350), hover(200, 800, 350)]);
+  await play(page, [hover(300, 600, 300), writeMove(500, 600, 300, 800, 350), hover(200, 800, 350)]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(1);
 });
 

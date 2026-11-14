@@ -568,3 +568,12 @@ input:focus-visible,
     animation: none !important;
   }
 }
+
+.settings textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 8rem;
+  padding: .75rem;
+  font: 1.1rem/1.5 system-ui, sans-serif;
+  resize: vertical;
+}

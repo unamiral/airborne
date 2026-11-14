@@ -10,7 +10,7 @@ import { BoardController } from '../../src/board/controller';
 import { toBoard, toWorld } from '../../src/board/view';
 import { boardPoint, type SurfacePoint, type WorldPoint } from '../../src/core/coords';
 import { runReplay } from '../../src/dev/replay-runner';
-import { hover, pinchMove, scenario, SURFACE } from '../support/scenarios';
+import { hover, writeMove, scenario, SURFACE } from '../support/scenarios';
 
 const toBoardPt = (p: SurfacePoint) => boardPoint(p.x - SURFACE.stripWidth, p.y);
 
@@ -23,8 +23,8 @@ describe('two-hand transform anchor in replay (F15)', () => {
   for (const c of cases) {
     it(`${c.label}: anchor error < 1 px on every update`, () => {
       const record = scenario(c.label, [
-        { phases: [hover(300, 500, 360), pinchMove(700, 500, 360, c.a[0], c.a[1]), hover(200, c.a[0], c.a[1])] },
-        { phases: [hover(300, 800, 360), pinchMove(700, 800, 360, c.b[0], c.b[1]), hover(200, c.b[0], c.b[1])], handedness: 'Left' },
+        { phases: [hover(300, 500, 360), writeMove(700, 500, 360, c.a[0], c.a[1]), hover(200, c.a[0], c.a[1])] },
+        { phases: [hover(300, 800, 360), writeMove(700, 800, 360, c.b[0], c.b[1]), hover(200, c.b[0], c.b[1])], handedness: 'Left' },
       ], { strokes: 0 });
       const controller = new BoardController(DEFAULT_CONFIG);
       let anchor: WorldPoint | null = null;

@@ -66,6 +66,29 @@ describe('replay record validation (F32)', () => {
     expect(parseReplay(record({ configVersion: 0, config: v1 })).ok).toBe(false);
   });
 
+  it('adds writing defaults when migrating a version-2 configuration', () => {
+    const { writeStartRatio: _start, writeReleaseRatio: _release, writeConfirmMs: _confirm, ...gesture } = DEFAULT_CONFIG.gesture;
+    const parsed = parseReplay(record({ configVersion: 2, config: { ...DEFAULT_CONFIG, version: 2, gesture } }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.record.config.gesture.writeStartRatio).toBe(DEFAULT_CONFIG.gesture.writeStartRatio);
+  });
+
+  it('preserves the saved release, result age, and observation gap limits from version 3', () => {
+    const { maxResultAgeMs: _age, ...gesture } = DEFAULT_CONFIG.gesture;
+    const parsed = parseReplay(record({
+      configVersion: 3,
+      config: { ...DEFAULT_CONFIG, version: 3, gesture: { ...gesture, writeReleaseRatio: 0.52, staleResultMs: 102 } },
+    }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.record.config.gesture).toMatchObject({
+        writeReleaseRatio: 0.52,
+        maxResultAgeMs: 102,
+        staleResultMs: 102,
+      });
+    }
+  });
+
   it('rejects invalid embedded configuration', () => {
     const parsed = parseReplay(record({ config: { ...DEFAULT_CONFIG, reach: 3 } }));
     expect(parsed.ok).toBe(false);

@@ -168,8 +168,8 @@ export class HandPipeline {
     const mapping = this.mapping;
     const layout = this.layout;
     const camera = this.camera;
-    if (ageMs > this.config.gesture.staleResultMs || mapping === null || layout === null || camera === null) {
-      return { input: { kind: 'loss', t }, hands: [], stale: ageMs > this.config.gesture.staleResultMs };
+    if (ageMs > this.config.gesture.maxResultAgeMs || mapping === null || layout === null || camera === null) {
+      return { input: { kind: 'loss', t }, hands: [], stale: ageMs > this.config.gesture.maxResultAgeMs };
     }
     const features = hands.map((h) => extractFeatures(h, camera.width, camera.height, this.featureConfig));
     const validIndex: number[] = [];
@@ -223,6 +223,7 @@ export class HandPipeline {
         ambiguous: isAmbiguous,
         pinchRatio: f.pinchRatio,
         pinchPose: f.pinchPose,
+        writingProximity: raw.inReach ? f.writingProximity : null,
         fist: f.fist,
         pen: shown,
         inReach,

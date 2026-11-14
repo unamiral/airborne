@@ -7,9 +7,9 @@ import { PRACTICE_STEPS, type PracticeStep, type PracticeTracker } from '../app/
 import { el, setText } from './dom';
 
 const STEP_TEXT: Readonly<Record<PracticeStep, { title: string; hand: string; mouse: string }>> = {
-  draw: { title: 'Draw a loop', hand: 'Pinch thumb and index finger, move, then open your hand.', mouse: 'Drag on the board.' },
-  pan: { title: 'Move the board', hand: 'Pinch with both hands and move them together.', mouse: 'Hold Space and drag.' },
-  zoom: { title: 'Zoom', hand: 'Pinch with both hands and move them apart or together.', mouse: 'Scroll or pinch the trackpad.' },
+  draw: { title: 'Draw a loop', hand: 'Extend your thumb, index and middle finger in the same direction, then move your index fingertip. Angle your thumb away to stop.', mouse: 'Drag on the board.' },
+  pan: { title: 'Move the board', hand: 'Use the writing pose with both hands, then move your hands together.', mouse: 'Hold Space and drag.' },
+  zoom: { title: 'Zoom', hand: 'Use the writing pose with both hands, then spread your hands apart or bring them together.', mouse: 'Scroll or pinch the trackpad.' },
   erase: { title: 'Erase your loop', hand: 'Hold a fist until the ring fills, then sweep over the loop.', mouse: 'Choose Erase and drag over the loop.' },
 };
 

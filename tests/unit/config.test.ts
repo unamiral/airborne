@@ -24,8 +24,7 @@ describe('configuration validation', () => {
     expect(g.transformRollbackPathPx).toBe(16);
     expect(g.minTransformSeparationPx).toBe(40);
     expect(g.fistArmMs).toBe(180);
-    expect(g.shortDropoutMs).toBe(80);
-    expect(g.reconnectDistancePx).toBe(8);
+    expect(g.writeConfirmMs).toBe(50);
     expect(g.staleResultMs).toBe(100);
     expect(DEFAULT_CONFIG.view).toEqual({ minScale: 0.1, maxScale: 10 });
     expect(SEED_STABILIZER_PRESETS.balanced).toEqual({ minCutoffHz: 1.5, beta: 0.02, derivativeCutoffHz: 1 });
@@ -66,6 +65,8 @@ describe('configuration validation', () => {
     const result = patchConfig(DEFAULT_CONFIG, { gesture: { pinchDownRatio: 0.4, pinchUpRatio: 0.3 } });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.join(' ')).toMatch(/hysteresis/);
+    expect(patchConfig(DEFAULT_CONFIG, { gesture: { writeStartRatio: 0.5, writeReleaseRatio: 0.5 } }).ok).toBe(false);
+    expect(patchConfig(DEFAULT_CONFIG, { gesture: { writeStartRatio: 0.4, writeReleaseRatio: 0.6 } }).ok).toBe(true);
   });
 
   it('applies a valid patch without mutating the base', () => {

@@ -92,7 +92,7 @@ export type Handedness = 'Left' | 'Right' | 'Unknown';
 export interface HandPayload {
   /** Normalized image landmarks, LANDMARK_VALUES numbers (x, y, z). */
   readonly landmarks: readonly number[];
-  /** Per-hand world landmarks in meters, origin at the hand's center. */
+  /** Per-hand world landmarks in meters, or an empty array when unavailable. */
   readonly world: readonly number[];
   /**
    * Handedness classification. Only a classification confidence, never a
@@ -147,7 +147,7 @@ function finiteArray(value: unknown, length: number): number[] | null {
 function parseHand(value: unknown): HandPayload | null {
   if (!isRecord(value)) return null;
   const landmarks = finiteArray(value.landmarks, LANDMARK_VALUES);
-  const world = finiteArray(value.world, LANDMARK_VALUES);
+  const world = Array.isArray(value.world) && value.world.length === 0 ? [] : finiteArray(value.world, LANDMARK_VALUES);
   if (landmarks === null || world === null) return null;
   const handedness = value.handedness;
   if (handedness !== 'Left' && handedness !== 'Right' && handedness !== 'Unknown') return null;

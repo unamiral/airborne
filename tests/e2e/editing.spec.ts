@@ -122,3 +122,17 @@ test('pause toggles from the toolbar and P, with a visible state (F25)', async (
   await drawWithMouse(page, [[100, 100], [300, 140]]);
   expect(await inkPixels(page)).toBeGreaterThan(0);
 });
+
+test('handwriting cleanup is explicit and undoable', async ({ page }) => {
+  await open(page);
+  await drawWithMouse(page, [[100, 120], [110, 122], [120, 118], [130, 122], [140, 120], [150, 122]]);
+  await page.getByRole('button', { name: 'Clean up handwriting' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clean up handwriting' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Light smoothing' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('button', { name: 'Redo' })).toBeEnabled();
+  expect(await inkPixels(page)).toBeGreaterThan(0);
+});

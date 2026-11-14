@@ -4,7 +4,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
-import { hover, pinchMove, scenario } from '../../support/scenarios';
+import { hover, writeMove, scenario } from '../../support/scenarios';
 import { drawWithMouse } from '../support';
 
 async function open(page: Page): Promise<void> {
@@ -57,7 +57,7 @@ test('settings changes wait for the stroke to finish (idle boundary) (F27)', asy
     const l = window.__air!.layout();
     return { width: l.width, height: l.height, stripWidth: l.board.x };
   });
-  const record = scenario('long stroke', [{ phases: [hover(300, 500, 300), pinchMove(1200, 500, 300, 800, 380), hover(300, 800, 380)] }], {}, { surface });
+  const record = scenario('long stroke', [{ phases: [hover(300, 500, 300), writeMove(1200, 500, 300, 800, 380), hover(300, 800, 380)] }], {}, { surface });
   const json = JSON.parse(JSON.stringify(record)) as { frames: unknown[] };
   const half = Math.floor(json.frames.length / 2);
   const result = await page.evaluate(

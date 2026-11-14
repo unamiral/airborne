@@ -14,11 +14,13 @@ import type { HandPayload } from '../tracking/protocol';
 import type { BackendPreference, WorkerLike } from '../tracking/tracker-client';
 import { Announcer } from '../ui/announcer';
 import { CameraPanel } from '../ui/camera-panel';
+import { BeautifyDialog } from '../ui/beautify';
 import { ConfirmDialog } from '../ui/dialogs';
 import { el, setText } from '../ui/dom';
 import { computeSurfaceLayout } from '../ui/layout';
 import { CameraPreview } from '../ui/preview';
 import { SettingsDialog, type SettingsValues } from '../ui/settings';
+import { HandwritingDialog } from '../ui/handwriting';
 import { Toolbar, commandForTarget, type Command } from '../ui/toolbar';
 import { resolveAssets, type ResolvedAssets } from './assets';
 import { CameraSession, type SessionState } from './camera-session';
@@ -138,6 +140,7 @@ export function createApp(root: HTMLElement): AppHandle {
   const settings = new SettingsDialog({
     setStabilizer: (stabilizer) => updateSettings({ stabilizer }),
     setReach: (reach) => updateSettings({ reach }),
+    setWritingDistance: (key, ratio) => updateSettings({ gesture: { [key]: ratio } }),
     setFistErase: (fistEraseEnabled) => updateSettings({ gesture: { fistEraseEnabled } }),
     setPreview: (visible) => {
       previewWanted = visible;
@@ -148,7 +151,12 @@ export function createApp(root: HTMLElement): AppHandle {
       void session.switchDevice(deviceId);
     },
     resetDefaults: () => {
-      updateSettings({ stabilizer: DEFAULT_CONFIG.stabilizer, reach: DEFAULT_CONFIG.reach, gesture: { fistEraseEnabled: true } });
+      const { writeStartRatio, writeReleaseRatio, fistEraseEnabled } = DEFAULT_CONFIG.gesture;
+      updateSettings({
+        stabilizer: DEFAULT_CONFIG.stabilizer,
+        reach: DEFAULT_CONFIG.reach,
+        gesture: { fistEraseEnabled, writeStartRatio, writeReleaseRatio },
+      });
       previewWanted = true;
       preview.setVisible(true);
       settings.update(settingsValues());
@@ -159,6 +167,16 @@ export function createApp(root: HTMLElement): AppHandle {
     },
   });
 
+  const handwriting = new HandwritingDialog(() => {
+    relayout();
+    canvas.focus({ preventScroll: true });
+  });
+
+  const beautify = new BeautifyDialog((level) => {
+    if (activeBoard.beautify(level)) announcer.announce('Handwriting cleaned up. Undo restores the original ink.');
+    else announcer.announce('No eligible ink to clean up.');
+  }, () => { relayout(); canvas.focus({ preventScroll: true }); });
+
   const strip = el('aside', { class: 'strip', 'aria-label': 'Controls' }, [
     panel.element,
     el('div', { class: 'mode-row' }, [modeChip]),
@@ -168,7 +186,7 @@ export function createApp(root: HTMLElement): AppHandle {
     preview.element,
   ]);
   const boardWrap = el('main', { class: 'board-wrap' }, [canvas, panel.errorCard]);
-  root.append(strip, boardWrap, clearDialog.element, settings.element, announcer.element);
+  root.append(strip, boardWrap, clearDialog.element, settings.element, handwriting.element, beautify.element, announcer.element);
   welcome = buildWelcome();
   boardWrap.append(welcome);
 
@@ -186,7 +204,7 @@ export function createApp(root: HTMLElement): AppHandle {
     return el('section', { class: 'card welcome', 'aria-labelledby': 'welcome-title' }, [
       el('h1', { id: 'welcome-title' }, ['Air Whiteboard']),
       el('p', {}, ['Write with your hands through the webcam, or draw with a mouse or trackpad.']),
-      el('p', {}, ['Pinch thumb and index finger to draw. Pinch with both hands to move and zoom. Hold a fist to erase.']),
+      el('p', {}, ['Extend your thumb, index and middle finger in roughly the same direction. Move your index fingertip to write. Angle your thumb away to stop. Use the same gesture with both hands to move and zoom. Pinch controls or hold a fist to erase.']),
       el('p', {}, [
         'Hand tracking runs on this device. Camera images are not uploaded, and the board stays in this tab unless you export it.',
       ]),
@@ -274,6 +292,14 @@ export function createApp(root: HTMLElement): AppHandle {
       settings.activate(id);
       return;
     }
+    if (beautify.isOpen) {
+      beautify.activate(id);
+      return;
+    }
+    if (handwriting.isOpen) {
+      handwriting.activate(id);
+      return;
+    }
     if (practice.activate(id)) return;
     const command = commandForTarget(id);
     if (command !== null) runCommand(command);
@@ -314,6 +340,16 @@ export function createApp(root: HTMLElement): AppHandle {
       case 'export':
         void exportPng();
         break;
+      case 'beautify':
+        board.closeTransientWork();
+        beautify.open();
+        relayout();
+        break;
+      case 'interpret':
+        board.closeTransientWork();
+        handwriting.open(board.doc.strokes);
+        relayout();
+        break;
       case 'settings':
         settings.open(settingsValues());
         relayout();
@@ -343,6 +379,8 @@ export function createApp(root: HTMLElement): AppHandle {
     return {
       stabilizer: c.stabilizer,
       reach: c.reach,
+      writeStartRatio: c.gesture.writeStartRatio,
+      writeReleaseRatio: c.gesture.writeReleaseRatio,
       fistErase: c.gesture.fistEraseEnabled,
       preview: previewWanted,
       cameras,
@@ -362,7 +400,7 @@ export function createApp(root: HTMLElement): AppHandle {
 
   let layoutValue: SurfaceLayout = computeLayout();
   function computeLayout(): SurfaceLayout {
-    const modal = clearDialog.isOpen ? clearDialog.element : settings.isOpen ? settings.element : null;
+    const modal = clearDialog.isOpen ? clearDialog.element : settings.isOpen ? settings.element : handwriting.isOpen ? handwriting.element : beautify.isOpen ? beautify.element : null;
     const overlays = [practice.card.element, practice.offer.element, panel.errorCard, ...(welcome !== null ? [welcome] : [])];
     return computeSurfaceLayout(root, canvas, modal, overlays);
   }
@@ -404,7 +442,7 @@ export function createApp(root: HTMLElement): AppHandle {
   attachPointerInput(canvas, {
     controller: () => activeBoard,
     spaceHeld: () => spaceHeld,
-    canStart: () => hands.idle && !clearDialog.isOpen && !settings.isOpen,
+    canStart: () => hands.idle && !clearDialog.isOpen && !settings.isOpen && !handwriting.isOpen && !beautify.isOpen,
     onUse: () => dismissWelcome(),
   });
   canvas.addEventListener('pointerdown', () => {
@@ -435,7 +473,7 @@ export function createApp(root: HTMLElement): AppHandle {
   function resume(): void {
     if (sessionState.kind === 'paused') session.resume();
     hands.resume();
-    announcer.announce('Resumed. Open your hand before drawing.');
+    announcer.announce('Resumed. Relax the writing pose before drawing.');
     syncToolbar();
   }
 
@@ -518,7 +556,7 @@ export function createApp(root: HTMLElement): AppHandle {
         if (hands.state.paused) hands.resume();
       }
       if (state.kind === 'ready') {
-        announcer.announce('Camera ready. Pinch to draw.');
+        announcer.announce('Camera ready. Point your thumb, index and middle finger in the same direction to draw.');
         practice.offerOnce();
         void listCameras(env).then((list) => {
           cameras = list;

@@ -6,7 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
 import { POSES } from '../../support/hands';
-import { hover, move, pinchAt, pinchMove, scenario, type HandScript, type Phase } from '../../support/scenarios';
+import { hover, move, writeMove, scenario, still, type HandScript, type Phase } from '../../support/scenarios';
 
 const ready = (page: Page) =>
   expect.poll(() => page.evaluate(() => window.__air!.session.state.kind), { timeout: 60_000 }).toBe('ready');
@@ -110,18 +110,18 @@ test('automated demo: write, recolor, zoom, erase, undo, and export (F36)', asyn
     const record = scenario('demo', hands, {}, { surface, noisePx: 0.3 });
     await page.evaluate((r) => window.__air!.replay(r, Number.POSITIVE_INFINITY), JSON.parse(JSON.stringify(record)) as unknown);
   };
-  const stroke = (x0: number, y0: number, x1: number, y1: number): Phase[] => [hover(250, x0, y0), pinchMove(450, x0, y0, x1, y1), hover(200, x1, y1)];
+  const stroke = (x0: number, y0: number, x1: number, y1: number): Phase[] => [hover(250, x0, y0), writeMove(450, x0, y0, x1, y1), hover(200, x1, y1)];
   // "1 + 1" in black.
   await play([{ phases: [...stroke(420, 260, 420, 360), ...stroke(480, 310, 540, 310), ...stroke(510, 280, 510, 340), ...stroke(600, 260, 600, 360)] }]);
   // Pick red by hand, then "= 2" pieces in red.
   const red = await centre('[data-hand-target="color-red"]');
-  await play([{ phases: [hover(300, red.x, red.y), pinchAt(250, red.x, red.y), hover(250, red.x, red.y)] }]);
+  await play([{ phases: [hover(300, red.x, red.y), { ms: 250, pose: POSES.pinch(), path: still(red.x, red.y) }, hover(250, red.x, red.y)] }]);
   await play([{ phases: [...stroke(660, 295, 720, 295), ...stroke(660, 325, 720, 325), ...stroke(760, 270, 820, 350)] }]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(7);
   // Two-hand zoom.
   await play([
-    { phases: [hover(300, 560, 500), pinchMove(600, 560, 500, 500, 500), hover(250, 500, 500)] },
-    { phases: [hover(300, 760, 500), pinchMove(600, 760, 500, 840, 500), hover(250, 840, 500)], handedness: 'Left' },
+    { phases: [hover(300, 560, 500), writeMove(600, 560, 500, 500, 500), hover(250, 500, 500)] },
+    { phases: [hover(300, 760, 500), writeMove(600, 760, 500, 840, 500), hover(250, 840, 500)], handedness: 'Left' },
   ]);
   const scale = await page.evaluate(() => window.__air!.controller.view.scale);
   expect(scale).toBeGreaterThan(1.2);
@@ -137,7 +137,7 @@ test('automated demo: write, recolor, zoom, erase, undo, and export (F36)', asyn
   await play([{ phases: [hover(300, two.x - 60, two.y), { ms: 700, pose: POSES.fist, path: move(two.x - 60, two.y, two.x + 30, two.y) }, hover(300, two.x + 30, two.y - 80)] }]);
   expect(await page.evaluate(() => window.__air!.controller.stats.strokes)).toBe(6);
   const undo = await centre('[data-hand-target="undo"]');
-  await play([{ phases: [hover(300, undo.x, undo.y), pinchAt(250, undo.x, undo.y), hover(250, undo.x, undo.y)] }]);
+  await play([{ phases: [hover(300, undo.x, undo.y), { ms: 250, pose: POSES.pinch(), path: still(undo.x, undo.y) }, hover(250, undo.x, undo.y)] }]);
   const final = await page.evaluate(() => {
     const c = window.__air!.controller;
     return { strokes: c.stats.strokes, red: c.doc.strokes.filter((s) => s.color === '#c5221f').length, undoDepth: c.history.undoDepth };

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type {} from '../../../src/dev/devtools';
-import { hover, pinchMove, scenario } from '../../support/scenarios';
+import { hover, writeMove, scenario } from '../../support/scenarios';
 import { inkPixels } from '../support';
 
 // Synthetic landmark replay through the live browser path (pipeline, reducer,
@@ -12,9 +12,9 @@ const record = scenario(
     {
       phases: [
         hover(300, 420, 300),
-        pinchMove(700, 420, 300, 760, 360),
+        writeMove(700, 420, 300, 760, 360),
         hover(300, 760, 420),
-        pinchMove(500, 760, 420, 940, 420),
+        writeMove(500, 760, 420, 940, 420),
         hover(300, 940, 420),
       ],
     },

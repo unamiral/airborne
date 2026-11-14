@@ -9,8 +9,8 @@
  *
  * Track flags (per application track id):
  *   armed   - an open hand has been observed since acquisition or the last
- *             interrupt; required before any action (no lines when a hand
- *             enters the camera already pinched).
+ *             interrupt, for control pinches and fist erasing.
+ *   writeArmed - a valid thumb/middle release has been observed for writing.
  *   pinched - hysteresis state (down below pinchDownRatio with a plausible
  *             pinch pose, up above pinchUpRatio).
  *   held    - this pinch was already used or blocked; it cannot start another
@@ -18,6 +18,7 @@
  */
 import type { GestureConfig } from '../app/config';
 import { distance, type SurfacePoint } from '../core/coords';
+import type { WritingProximity } from '../tracking/features';
 
 export type TrackId = number;
 
@@ -34,6 +35,7 @@ export interface HandSample {
   readonly ambiguous: boolean;
   readonly pinchRatio: number;
   readonly pinchPose: boolean;
+  readonly writingProximity: WritingProximity | null;
   readonly fist: boolean;
   /** Filtered pen position. */
   readonly pen: SurfacePoint;
@@ -55,8 +57,6 @@ export type ReducerInput =
 export type Intent =
   | { readonly kind: 'stroke-begin'; readonly owner: TrackId; readonly at: SurfacePoint; readonly t: number }
   | { readonly kind: 'stroke-point'; readonly at: SurfacePoint; readonly t: number }
-  /** Held-back samples shown provisionally; replaces any previous preview. */
-  | { readonly kind: 'stroke-preview'; readonly points: readonly SurfacePoint[] }
   | { readonly kind: 'stroke-confirm' }
   | { readonly kind: 'stroke-commit' }
   | { readonly kind: 'stroke-cancel' }
@@ -70,7 +70,9 @@ export type Intent =
   | { readonly kind: 'erase-end' }
   | { readonly kind: 'control-activate'; readonly id: string };
 
-interface Pending {
+type WritingGesture = 'aligned' | 'proximity';
+
+interface StrokeSample {
   readonly at: SurfacePoint;
   readonly t: number;
 }
@@ -79,12 +81,11 @@ export type Mode =
   | { readonly kind: 'disabled' }
   | { readonly kind: 'hover' }
   | {
-      readonly kind: 'pinch-candidate';
+      readonly kind: 'write-candidate';
       readonly owner: TrackId;
-      readonly onsetT: number;
-      readonly samples: number;
-      readonly last: SurfacePoint;
-      readonly pathLength: number;
+      readonly points: readonly StrokeSample[];
+      readonly space: WritingProximity['space'];
+      readonly gesture: WritingGesture;
     }
   | {
       readonly kind: 'drawing';
@@ -92,29 +93,26 @@ export type Mode =
       readonly onsetT: number;
       readonly last: SurfacePoint;
       readonly lastT: number;
-      readonly pathLength: number;
-      readonly pending: readonly Pending[];
-    }
-  | {
-      readonly kind: 'suspended';
-      readonly owner: TrackId;
-      readonly onsetT: number;
-      readonly last: SurfacePoint;
-      readonly lastT: number;
+      readonly space: WritingProximity['space'];
+      readonly gesture: WritingGesture;
       readonly pathLength: number;
     }
-  | { readonly kind: 'transforming'; readonly a: TrackId; readonly b: TrackId }
+  | { readonly kind: 'transforming'; readonly a: TrackId; readonly b: TrackId; readonly aSpace: WritingProximity['space']; readonly bSpace: WritingProximity['space']; readonly aGesture: WritingGesture; readonly bGesture: WritingGesture }
   | { readonly kind: 'erase-arming'; readonly owner: TrackId }
   | { readonly kind: 'erasing'; readonly owner: TrackId }
   | { readonly kind: 'ui-candidate'; readonly owner: TrackId; readonly control: string; readonly onsetT: number; readonly samples: number }
   | { readonly kind: 'ui-capture'; readonly owner: TrackId }
-  | { readonly kind: 'await-release'; readonly waiting: readonly TrackId[] };
+  | { readonly kind: 'await-release'; readonly waiting: readonly TrackId[]; readonly writing?: true };
 
 export interface TrackFlags {
   readonly armed: boolean;
   readonly pinched: boolean;
   readonly held: boolean;
   readonly fistSince: number | null;
+  readonly writeArmed: boolean;
+  readonly writeSince: number | null;
+  readonly lastWriteSample: number | null;
+  readonly writeSpace: WritingProximity['space'] | null;
 }
 
 export interface ReducerState {
@@ -141,12 +139,10 @@ export function modeLabel(state: ReducerState): ModeLabel {
       return 'Paused';
     case 'hover':
     case 'await-release':
+    case 'write-candidate':
       return 'Hover';
-    case 'pinch-candidate':
     case 'drawing':
       return 'Draw';
-    case 'suspended':
-      return 'Tracking lost';
     case 'transforming':
       return 'Move';
     case 'erase-arming':
@@ -162,9 +158,8 @@ export function modeLabel(state: ReducerState): ModeLabel {
 /** Owner track ids of the current interaction (for cursor emphasis). */
 export function owners(mode: Mode): readonly TrackId[] {
   switch (mode.kind) {
-    case 'pinch-candidate':
+    case 'write-candidate':
     case 'drawing':
-    case 'suspended':
     case 'erase-arming':
     case 'erasing':
     case 'ui-candidate':
@@ -198,7 +193,10 @@ class Builder {
   }
 
   flags(id: TrackId): TrackFlags {
-    return this.tracks.get(id) ?? { armed: false, pinched: false, held: false, fistSince: null };
+    return this.tracks.get(id) ?? {
+      armed: false, pinched: false, held: false, fistSince: null,
+      writeArmed: false, writeSince: null, lastWriteSample: null, writeSpace: null,
+    };
   }
 
   hold(id: TrackId): void {
@@ -206,8 +204,23 @@ class Builder {
   }
 
   disarm(id: TrackId): void {
-    this.tracks.set(id, { ...this.flags(id), armed: false, held: true });
+    this.tracks.set(id, { ...this.flags(id), armed: false, held: true, writeArmed: false, writeSince: null });
   }
+
+  blockWriting(id: TrackId): void {
+    this.tracks.set(id, { ...this.flags(id), writeArmed: false, writeSince: null });
+  }
+}
+
+function startingGesture(proximity: WritingProximity, ratio: number): WritingGesture | null {
+  if (proximity.aligned === true) return 'aligned';
+  return proximity.ratio <= ratio ? 'proximity' : null;
+}
+
+function isWritingReleased(proximity: WritingProximity, ratio: number, gesture?: WritingGesture): boolean {
+  if (gesture === 'aligned') return proximity.aligned !== true;
+  if (gesture === 'proximity') return proximity.ratio >= ratio;
+  return proximity.aligned !== true && proximity.ratio >= ratio;
 }
 
 function updateFlags(b: Builder, hand: HandSample, t: number): void {
@@ -215,24 +228,34 @@ function updateFlags(b: Builder, hand: HandSample, t: number): void {
   const prev = b.flags(hand.id);
   if (!hand.usable) {
     // No evidence this frame: keep pinch state, break fist continuity.
-    b.tracks.set(hand.id, { ...prev, fistSince: null });
+    b.tracks.set(hand.id, { ...prev, fistSince: null, writeArmed: false, writeSince: null });
     return;
   }
   let pinched = prev.pinched;
   if (pinched && hand.pinchRatio > g.pinchUpRatio) pinched = false;
   else if (!pinched && hand.pinchRatio < g.pinchDownRatio && hand.pinchPose) pinched = true;
-  const openHand = !pinched && hand.pinchRatio > g.pinchUpRatio && !hand.fist;
+  const openHand = !pinched && Number.isFinite(hand.pinchRatio) && hand.pinchRatio > g.pinchUpRatio && !hand.fist;
   const fistSince = hand.fist && !pinched ? (prev.fistSince ?? t) : null;
+  const proximity = hand.writingProximity;
+  const released = !hand.fist && proximity !== null && isWritingReleased(proximity, g.writeReleaseRatio);
+  const continuous = proximity !== null && proximity.space === prev.writeSpace &&
+    prev.lastWriteSample !== null && t > prev.lastWriteSample && t - prev.lastWriteSample <= g.staleResultMs;
+  const writeArmed = released || (continuous && prev.writeArmed && onBoard(hand) && !hand.fist);
+  const withinStart = writeArmed && proximity !== null && startingGesture(proximity, g.writeStartRatio) !== null && !hand.fist && onBoard(hand);
   b.tracks.set(hand.id, {
     armed: prev.armed || openHand,
     pinched,
     held: pinched ? prev.held : false,
     fistSince,
+    writeArmed,
+    writeSince: withinStart ? (prev.writeSince ?? t) : null,
+    lastWriteSample: proximity === null ? null : t,
+    writeSpace: proximity?.space ?? null,
   });
 }
 
 /** A hand that may start a new action with this pinch. */
-function canStart(b: Builder, hand: HandSample): boolean {
+function canStartControl(b: Builder, hand: HandSample): boolean {
   const f = b.flags(hand.id);
   return hand.usable && f.armed && f.pinched && !f.held;
 }
@@ -244,11 +267,7 @@ function onBoard(hand: HandSample): boolean {
 /** Closes whatever interaction is active, preserving valid ink. */
 function closeInteraction(b: Builder, mode: Mode): void {
   switch (mode.kind) {
-    case 'pinch-candidate':
-      b.emit({ kind: 'stroke-cancel' });
-      return;
     case 'drawing':
-    case 'suspended':
       b.emit({ kind: 'stroke-commit' });
       return;
     case 'transforming':
@@ -260,6 +279,7 @@ function closeInteraction(b: Builder, mode: Mode): void {
     case 'erasing':
       b.emit({ kind: 'erase-end' });
       return;
+    case 'write-candidate':
     case 'ui-candidate':
     case 'ui-capture':
     case 'await-release':
@@ -270,27 +290,20 @@ function closeInteraction(b: Builder, mode: Mode): void {
 }
 
 function startFromHover(b: Builder, hands: readonly HandSample[], t: number): Mode {
-  const starters = hands.filter((h) => canStart(b, h)).sort((x, y) => x.id - y.id);
-  const [first, second] = starters;
-  if (first !== undefined && second !== undefined && onBoard(first) && onBoard(second)) {
-    b.hold(first.id);
-    b.hold(second.id);
-    b.emit({ kind: 'transform-begin', a: first.pen, b: second.pen });
-    return { kind: 'transforming', a: first.id, b: second.id };
+  const control = hands.find((h) => h.region.kind === 'control' && canStartControl(b, h));
+  if (control?.region.kind === 'control') {
+    b.hold(control.id);
+    return { kind: 'ui-candidate', owner: control.id, control: control.region.id, onsetT: t, samples: 1 };
   }
-  if (first !== undefined) {
-    b.hold(first.id);
-    const region = first.region;
-    if (region.kind === 'control') {
-      return { kind: 'ui-candidate', owner: first.id, control: region.id, onsetT: t, samples: 1 };
+  const writer = hands.filter((h) => b.flags(h.id).writeSince !== null).sort((a, b) => a.id - b.id)[0];
+  if (writer !== undefined && writer.writingProximity !== null) {
+    const gesture = startingGesture(writer.writingProximity, b.config.writeStartRatio);
+    if (gesture !== null) {
+      return { kind: 'write-candidate', owner: writer.id, points: [{ at: writer.pen, t }], space: writer.writingProximity.space, gesture };
     }
-    if (onBoard(first)) {
-      b.emit({ kind: 'stroke-begin', owner: first.id, at: first.pen, t });
-      return { kind: 'pinch-candidate', owner: first.id, onsetT: t, samples: 1, last: first.pen, pathLength: 0 };
-    }
-    // Pinch on the strip background, outside, or out of reach: absorbed.
-    return { kind: 'hover' };
   }
+  // Consume a pinch begun away from controls so dragging onto one cannot click.
+  holdOthers(b, hands, []);
   if (b.config.fistEraseEnabled) {
     const fist = hands
       .filter((h) => h.usable && h.fist && b.flags(h.id).armed && !b.flags(h.id).pinched && onBoard(h))
@@ -311,8 +324,11 @@ function holdOthers(b: Builder, hands: readonly HandSample[], except: readonly T
   }
 }
 
-function secondHandJoins(b: Builder, hands: readonly HandSample[], owner: TrackId): HandSample | undefined {
-  return hands.find((h) => h.id !== owner && canStart(b, h) && onBoard(h));
+function secondHandJoins(b: Builder, hands: readonly HandSample[], owner: TrackId, t: number): HandSample | undefined {
+  return hands.find((h) => {
+    const since = b.flags(h.id).writeSince;
+    return h.id !== owner && since !== null && t - since >= b.config.writeConfirmMs;
+  });
 }
 
 /**
@@ -346,13 +362,14 @@ function pausedStep(
       next = { kind: 'disabled' };
     }
   } else {
-    const starter = hands.filter((h) => canStart(b, h)).sort((x, y) => x.id - y.id)[0];
+    const starter = hands.find((h) => h.region.kind === 'control' && canStartControl(b, h));
     if (starter !== undefined) {
       b.hold(starter.id);
       if (starter.region.kind === 'control') {
         next = { kind: 'ui-candidate', owner: starter.id, control: starter.region.id, onsetT: t, samples: 1 };
       }
     }
+    holdOthers(b, hands, []);
   }
   return { state: { mode: next, tracks: b.tracks, paused: true }, intents: b.intents };
 }
@@ -360,12 +377,19 @@ function pausedStep(
 function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'frame' }>, config: GestureConfig): Step {
   const b = new Builder(state.tracks, config);
   const { t, hands, expired } = input;
-  for (const id of expired) b.tracks.delete(id);
-  for (const hand of hands) updateFlags(b, hand, t);
   const byId = new Map(hands.map((h) => [h.id, h]));
+  for (const id of expired) b.tracks.delete(id);
+  for (const id of b.tracks.keys()) {
+    if (!byId.has(id)) b.blockWriting(id);
+  }
+  const mode = state.mode;
+  const allowsWriting = !state.paused && (mode.kind === 'hover' || mode.kind === 'write-candidate' || mode.kind === 'drawing');
+  for (const hand of hands) {
+    updateFlags(b, hand, t);
+    if (!allowsWriting && b.flags(hand.id).writeSince !== null) b.blockWriting(hand.id);
+  }
   const known = (id: TrackId): boolean => b.tracks.has(id);
 
-  const mode = state.mode;
   if (state.paused) return pausedStep(b, state, hands, byId, t, known);
 
   let next: Mode = mode;
@@ -375,143 +399,74 @@ function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'fr
       next = startFromHover(b, hands, t);
       break;
 
-    case 'pinch-candidate': {
+    case 'write-candidate': {
+      holdOthers(b, hands, []);
       const o = byId.get(mode.owner);
-      const f = b.flags(mode.owner);
-      const joiner = secondHandJoins(b, hands, mode.owner);
-      if (joiner !== undefined && o !== undefined && o.usable && f.pinched && onBoard(o)) {
-        b.emit({ kind: 'stroke-cancel' });
-        b.hold(joiner.id);
-        b.emit({ kind: 'transform-begin', a: o.pen, b: joiner.pen });
-        next = { kind: 'transforming', a: mode.owner, b: joiner.id };
-      } else if (o === undefined || !o.usable) {
-        b.emit({ kind: 'stroke-cancel' });
-        if (o?.ambiguous === true) b.disarm(mode.owner);
-        next = known(mode.owner) ? { kind: 'await-release', waiting: [mode.owner] } : { kind: 'hover' };
-      } else if (!f.pinched) {
-        b.emit({ kind: 'stroke-cancel' });
+      const proximity = o?.writingProximity ?? null;
+      const last = mode.points[mode.points.length - 1]!;
+      const first = mode.points[0]!;
+      if (o === undefined || !o.usable || proximity === null || proximity.space !== mode.space ||
+          t - last.t > config.staleResultMs || !onBoard(o) || o.fist || startingGesture(proximity, config.writeStartRatio) !== mode.gesture) {
         next = { kind: 'hover' };
-      } else if (!onBoard(o)) {
-        b.emit({ kind: 'stroke-cancel' });
-        next = { kind: 'await-release', waiting: [mode.owner] };
-      } else {
-        b.emit({ kind: 'stroke-point', at: o.pen, t });
-        const samples = mode.samples + 1;
-        const pathLength = mode.pathLength + distance(mode.last, o.pen);
-        if (samples >= b.config.confirmSamples && t - mode.onsetT >= b.config.confirmMs) {
-          b.emit({ kind: 'stroke-confirm' });
-          next = { kind: 'drawing', owner: mode.owner, onsetT: mode.onsetT, last: o.pen, lastT: t, pathLength, pending: [] };
-        } else {
-          next = { ...mode, samples, last: o.pen, pathLength };
-        }
+        break;
       }
-      if (next.kind !== 'transforming') holdOthers(b, hands, [mode.owner]);
+      const points = [...mode.points, { at: o.pen, t }];
+      if (t - first.t < config.writeConfirmMs) {
+        next = { ...mode, points };
+        break;
+      }
+      const joiner = secondHandJoins(b, hands, mode.owner, t);
+      const joinerGesture = joiner?.writingProximity ? startingGesture(joiner.writingProximity, config.writeStartRatio) : null;
+      if (joiner !== undefined && joiner.writingProximity !== null && joinerGesture !== null) {
+        b.emit({ kind: 'transform-begin', a: o.pen, b: joiner.pen });
+        next = { kind: 'transforming', a: o.id, b: joiner.id, aSpace: mode.space, bSpace: joiner.writingProximity.space, aGesture: mode.gesture, bGesture: joinerGesture };
+        break;
+      }
+      b.emit({ kind: 'stroke-begin', owner: o.id, at: first.at, t: first.t });
+      let pathLength = 0;
+      for (let i = 1; i < points.length; i++) {
+        const point = points[i]!;
+        b.emit({ kind: 'stroke-point', ...point });
+        pathLength += distance(points[i - 1]!.at, point.at);
+      }
+      b.emit({ kind: 'stroke-confirm' });
+      next = { kind: 'drawing', owner: o.id, onsetT: first.t, last: o.pen, lastT: t, pathLength, space: mode.space, gesture: mode.gesture };
       break;
     }
 
     case 'drawing': {
+      holdOthers(b, hands, []);
       const o = byId.get(mode.owner);
-      const f = b.flags(mode.owner);
-      const joiner = secondHandJoins(b, hands, mode.owner);
-      if (joiner !== undefined && o !== undefined && o.usable && f.pinched && onBoard(o)) {
-        const early = t - mode.onsetT <= b.config.twoHandJoinWindowMs && mode.pathLength <= b.config.transformRollbackPathPx;
-        if (mode.pending.length > 0) b.emit({ kind: 'stroke-preview', points: [] });
-        b.emit({ kind: early ? 'stroke-cancel' : 'stroke-commit' });
-        b.hold(joiner.id);
-        b.emit({ kind: 'transform-begin', a: o.pen, b: joiner.pen });
-        next = { kind: 'transforming', a: mode.owner, b: joiner.id };
-        break;
-      }
-      holdOthers(b, hands, [mode.owner]);
-      if (o === undefined || (!o.usable && !o.ambiguous)) {
-        // Missing, invalid, or a suspected discontinuity: freeze the endpoint.
-        if (mode.pending.length > 0) b.emit({ kind: 'stroke-preview', points: [] });
-        next = {
-          kind: 'suspended',
-          owner: mode.owner,
-          onsetT: mode.onsetT,
-          last: mode.last,
-          lastT: mode.lastT,
-          pathLength: mode.pathLength,
-        };
-        break;
-      }
-      if (o.ambiguous) {
+      const proximity = o?.writingProximity ?? null;
+      if (o === undefined || !o.usable || proximity === null || proximity.space !== mode.space || t - mode.lastT > config.staleResultMs) {
         b.emit({ kind: 'stroke-commit' });
-        b.disarm(mode.owner);
-        next = { kind: 'await-release', waiting: [mode.owner] };
-        break;
-      }
-      if (!onBoard(o)) {
-        // Crossing onto the strip or out of reach ends ink at the last valid
-        // board sample; controls stay inactive until this pinch is released.
-        b.emit({ kind: 'stroke-commit' });
-        next = f.pinched ? { kind: 'await-release', waiting: [mode.owner] } : { kind: 'hover' };
-        break;
-      }
-      if (!f.pinched) {
-        // First reliable sample above the up threshold: stop immediately and
-        // discard held-back opening samples (no release tails).
-        b.emit({ kind: 'stroke-commit' });
+        if (known(mode.owner)) b.blockWriting(mode.owner);
         next = { kind: 'hover' };
         break;
       }
-      let pending = mode.pending;
-      let last = mode.last;
-      let lastT = mode.lastT;
-      let pathLength = mode.pathLength;
-      const append = (p: Pending): void => {
-        b.emit({ kind: 'stroke-point', at: p.at, t: p.t });
-        pathLength += distance(last, p.at);
-        last = p.at;
-        lastT = p.t;
-      };
-      if (o.pinchRatio < b.config.pinchDownRatio) {
-        pending.forEach(append);
-        if (pending.length > 0) b.emit({ kind: 'stroke-preview', points: [] });
-        pending = [];
-        append({ at: o.pen, t });
-      } else {
-        // Inside the hysteresis band: possibly the hand starting to open.
-        pending = [...pending, { at: o.pen, t }];
-        if (t - pending[0]!.t > b.config.releaseHoldMs) {
-          pending.forEach(append);
-          pending = [];
+      const released = isWritingReleased(proximity, config.writeReleaseRatio, mode.gesture);
+      if (released || !onBoard(o) || o.fist) {
+        b.emit({ kind: 'stroke-commit' });
+        if (!isWritingReleased(proximity, config.writeReleaseRatio)) {
+          b.blockWriting(o.id);
+          // Crossing into controls must not turn a writing gesture into a click.
+          next = { kind: 'await-release', waiting: [o.id], writing: true };
+        } else {
+          next = { kind: 'hover' };
         }
-        b.emit({ kind: 'stroke-preview', points: pending.map((p) => p.at) });
+        break;
       }
-      next = { ...mode, last, lastT, pathLength, pending };
-      break;
-    }
-
-    case 'suspended': {
-      holdOthers(b, hands, [mode.owner]);
-      const o = byId.get(mode.owner);
-      const f = b.flags(mode.owner);
-      if (t - mode.lastT > b.config.shortDropoutMs || !known(mode.owner)) {
-        b.emit({ kind: 'stroke-commit' });
-        next = known(mode.owner) ? { kind: 'await-release', waiting: [mode.owner] } : { kind: 'hover' };
-      } else if (o === undefined || (!o.usable && !o.ambiguous)) {
-        next = mode;
-      } else if (o.ambiguous) {
-        b.emit({ kind: 'stroke-commit' });
-        b.disarm(mode.owner);
-        next = { kind: 'await-release', waiting: [mode.owner] };
-      } else if (f.pinched && onBoard(o) && distance(o.pen, mode.last) <= b.config.reconnectDistancePx) {
-        b.emit({ kind: 'stroke-point', at: o.pen, t });
-        next = {
-          kind: 'drawing',
-          owner: mode.owner,
-          onsetT: mode.onsetT,
-          last: o.pen,
-          lastT: t,
-          pathLength: mode.pathLength + distance(mode.last, o.pen),
-          pending: [],
-        };
-      } else {
-        b.emit({ kind: 'stroke-commit' });
-        next = f.pinched ? { kind: 'await-release', waiting: [mode.owner] } : { kind: 'hover' };
+      const joiner = secondHandJoins(b, hands, mode.owner, t);
+      const joinerGesture = joiner?.writingProximity ? startingGesture(joiner.writingProximity, config.writeStartRatio) : null;
+      if (joiner !== undefined && joiner.writingProximity !== null && joinerGesture !== null) {
+        const early = t - mode.onsetT <= config.twoHandJoinWindowMs && mode.pathLength <= config.transformRollbackPathPx;
+        b.emit({ kind: early ? 'stroke-cancel' : 'stroke-commit' });
+        b.emit({ kind: 'transform-begin', a: o.pen, b: joiner.pen });
+        next = { kind: 'transforming', a: o.id, b: joiner.id, aSpace: mode.space, bSpace: joiner.writingProximity.space, aGesture: mode.gesture, bGesture: joinerGesture };
+        break;
       }
+      b.emit({ kind: 'stroke-point', at: o.pen, t });
+      next = { ...mode, last: o.pen, lastT: t, pathLength: mode.pathLength + distance(mode.last, o.pen) };
       break;
     }
 
@@ -519,14 +474,16 @@ function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'fr
       holdOthers(b, hands, [mode.a, mode.b]);
       const sa = byId.get(mode.a);
       const sb = byId.get(mode.b);
-      const ok = (s: HandSample | undefined): s is HandSample => s !== undefined && s.usable && b.flags(s.id).pinched && s.inReach;
-      if (ok(sa) && ok(sb)) {
+      const ok = (hand: HandSample | undefined, space: WritingProximity['space'], gesture: WritingGesture): hand is HandSample =>
+        hand !== undefined && hand.usable && hand.inReach && !hand.fist &&
+        hand.writingProximity?.space === space && !isWritingReleased(hand.writingProximity, config.writeReleaseRatio, gesture);
+      if (ok(sa, mode.aSpace, mode.aGesture) && ok(sb, mode.bSpace, mode.bGesture)) {
         b.emit({ kind: 'transform-update', a: sa.pen, b: sb.pen });
       } else {
         b.emit({ kind: 'transform-end' });
         if (sa?.ambiguous === true) b.disarm(mode.a);
         if (sb?.ambiguous === true) b.disarm(mode.b);
-        next = { kind: 'await-release', waiting: [mode.a, mode.b].filter(known) };
+        next = { kind: 'await-release', waiting: [mode.a, mode.b].filter(known), writing: true };
       }
       break;
     }
@@ -597,9 +554,11 @@ function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'fr
       const waiting = mode.waiting.filter((id) => {
         if (!known(id)) return false; // expired: ownership ends (not a release)
         const o = byId.get(id);
-        return !(o !== undefined && o.usable && !b.flags(id).pinched);
+        if (o === undefined || !o.usable) return true;
+        if (mode.writing) return o.writingProximity === null || !isWritingReleased(o.writingProximity, config.writeReleaseRatio);
+        return b.flags(id).pinched;
       });
-      next = waiting.length === 0 ? { kind: 'hover' } : { kind: 'await-release', waiting };
+      next = waiting.length === 0 ? { kind: 'hover' } : { ...mode, waiting };
       break;
     }
   }
@@ -615,9 +574,6 @@ export function reduce(state: ReducerState, input: ReducerInput, config: Gesture
     case 'interrupt': {
       const b = new Builder(state.tracks, config);
       closeInteraction(b, state.mode);
-      if (state.mode.kind === 'drawing' && state.mode.pending.length > 0) {
-        b.intents.unshift({ kind: 'stroke-preview', points: [] });
-      }
       for (const id of [...b.tracks.keys()]) b.disarm(id);
       const paused = input.pause || state.paused;
       return {
@@ -634,9 +590,6 @@ export function reduce(state: ReducerState, input: ReducerInput, config: Gesture
     case 'reset': {
       const b = new Builder(new Map(), config);
       closeInteraction(b, state.mode);
-      if (state.mode.kind === 'drawing' && state.mode.pending.length > 0) {
-        b.intents.unshift({ kind: 'stroke-preview', points: [] });
-      }
       return {
         state: { mode: state.paused ? { kind: 'disabled' } : { kind: 'hover' }, tracks: new Map(), paused: state.paused },
         intents: b.intents,

@@ -29,9 +29,6 @@ export function applyIntents(intents: readonly Intent[], sinks: IntentSinks): vo
       case 'stroke-point':
         c.extendStroke(toBoard(intent.at));
         break;
-      case 'stroke-preview':
-        c.setPreview(intent.points.map(toBoard));
-        break;
       case 'stroke-confirm':
         c.confirmStroke();
         break;

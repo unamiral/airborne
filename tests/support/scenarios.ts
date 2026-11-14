@@ -6,7 +6,6 @@
  */
 import { CONFIG_VERSION, DEFAULT_CONFIG, type AppConfig } from '../../src/app/config';
 import { REPLAY_SCHEMA_VERSION, type ReplayExpectations, type ReplayFrame, type ReplayRecord } from '../../src/dev/replay-format';
-import { SurfaceMapping } from '../../src/input/mapping';
 import type { HandPayload } from '../../src/tracking/protocol';
 import { POSES, handAt, type Pose } from './hands';
 
@@ -46,19 +45,13 @@ export interface ScenarioOptions {
 
 type Surface = { readonly width: number; readonly height: number; readonly stripWidth: number };
 
-const mapping = (config: AppConfig, surface: Surface) =>
-  new SurfaceMapping({
-    cameraWidth: CAMERA.width,
-    cameraHeight: CAMERA.height,
-    surfaceWidth: surface.width,
-    surfaceHeight: surface.height,
-    reach: config.reach,
-  });
-
 /** Inverse of SurfaceMapping.toSurface (unmirrored normalized camera coords). */
 export function surfaceToCamera(x: number, y: number, config: AppConfig = DEFAULT_CONFIG, surface: Surface = SURFACE): { u: number; v: number } {
-  const { u0, u1, v0, v1 } = mapping(config, surface).rect;
-  return { u: 1 - (u0 + (x / surface.width) * (u1 - u0)), v: v0 + (y / surface.height) * (v1 - v0) };
+  const inverse = (value: number): number => {
+    const d = 2 * value - 1;
+    return (1 + Math.sign(d) * Math.pow(Math.abs(d), 0.7 / config.reach)) / 2;
+  };
+  return { u: inverse(1 - x / surface.width), v: inverse(y / surface.height) };
 }
 
 function handAtTime(script: HandScript, t: number): { pose: Pose; x: number; y: number } | null {
@@ -125,9 +118,9 @@ export function scenario(
 
 /** Common phases. */
 export const hover = (ms: number, x: number, y: number): Phase => ({ ms, pose: POSES.open, path: still(x, y) });
-export const pinchMove = (ms: number, x0: number, y0: number, x1: number, y1: number, ratio = 0.1): Phase => ({
+export const writeMove = (ms: number, x0: number, y0: number, x1: number, y1: number, ratio = 0.24): Phase => ({
   ms,
-  pose: POSES.pinch(ratio),
+  pose: POSES.writing(ratio),
   path: move(x0, y0, x1, y1),
 });
-export const pinchAt = (ms: number, x: number, y: number, ratio = 0.1): Phase => ({ ms, pose: POSES.pinch(ratio), path: still(x, y) });
+export const writeAt = (ms: number, x: number, y: number, ratio = 0.24): Phase => ({ ms, pose: POSES.writing(ratio), path: still(x, y) });

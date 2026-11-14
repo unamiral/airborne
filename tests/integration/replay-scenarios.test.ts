@@ -9,7 +9,7 @@ import type { Stroke } from '../../src/board/stroke';
 import { parseReplay, type ReplayRecord } from '../../src/dev/replay-format';
 import { runReplay } from '../../src/dev/replay-runner';
 import { POSES, withRotation } from '../support/hands';
-import { hover, move, pinchAt, pinchMove, scenario, still, type HandScript } from '../support/scenarios';
+import { hover, move, writeAt, writeMove, scenario, still, type HandScript } from '../support/scenarios';
 
 /** Board-local CSS px of a stroke point (identity view; board starts after the 120 px strip). */
 function points(stroke: Stroke): Array<{ x: number; y: number }> {
@@ -39,10 +39,10 @@ describe('writing', () => {
         {
           phases: [
             hover(300, 400, 300),
-            pinchMove(600, 400, 300, 700, 350),
+            writeMove(600, 400, 300, 700, 350),
             { ms: 300, pose: POSES.open, path: move(700, 350, 720, 400) },
             hover(150, 720, 400),
-            pinchMove(500, 720, 400, 900, 400),
+            writeMove(500, 720, 400, 900, 400),
             hover(300, 900, 380),
           ],
         },
@@ -57,7 +57,7 @@ describe('writing', () => {
   });
 
   it('starts at the recorded onset rather than a later confirmation point', () => {
-    const r = run(scenario('onset', [{ phases: [hover(300, 400, 300), pinchMove(400, 400, 300, 600, 300), hover(200, 600, 300)] }], { strokes: 1 }));
+    const r = run(scenario('onset', [{ phases: [hover(300, 400, 300), writeMove(400, 400, 300, 600, 300), hover(200, 600, 300)] }], { strokes: 1 }));
     const first = points(r.controller.doc.strokes[0]!)[0]!;
     expect(Math.abs(first.x - 400)).toBeLessThan(2);
     expect(Math.abs(first.y - 300)).toBeLessThan(2);
@@ -65,7 +65,7 @@ describe('writing', () => {
 
   it('stays one stroke under landmark noise (no flicker or stray starts)', () => {
     const r = run(
-      scenario('noisy', [{ phases: [hover(300, 400, 300), pinchMove(1500, 400, 300, 900, 450, 0.15), hover(300, 900, 450)] }], { strokes: 1 }, { noisePx: 0.6, worldNoiseM: 0.001 }),
+      scenario('noisy', [{ phases: [hover(300, 400, 300), writeMove(1500, 400, 300, 900, 450, 0.15), hover(300, 900, 450)] }], { strokes: 1 }, { noisePx: 0.6, worldNoiseM: 0.001 }),
     );
     expect(kinds(r).filter((k) => k === 'stroke-begin')).toHaveLength(1);
     expect(r.controller.doc.strokeCount).toBe(1);
@@ -79,13 +79,13 @@ describe('dots, punctuation, and release (F10)', () => {
         {
           phases: [
             hover(300, 500, 300),
-            pinchAt(70, 500, 300),
+            writeAt(110, 500, 300),
             { ms: 250, pose: POSES.open, path: move(500, 300, 600, 320) },
             hover(150, 600, 320),
-            pinchAt(70, 600, 320),
+            writeAt(110, 600, 320),
             { ms: 250, pose: POSES.open, path: move(600, 320, 700, 300) },
             hover(150, 700, 300),
-            pinchMove(120, 700, 300, 708, 300),
+            writeMove(120, 700, 300, 708, 300),
             hover(250, 720, 300),
           ],
         },
@@ -99,10 +99,10 @@ describe('dots, punctuation, and release (F10)', () => {
     expect(extent(minus!)).toBeLessThan(12);
   });
 
-  it('discards a single-frame false pinch', () => {
-    const r = run(scenario('false pinch', [{ phases: [hover(300, 500, 300), pinchAt(33, 500, 300), hover(400, 500, 300)] }], { strokes: 0 }));
+  it('discards a single-frame false proximity detection', () => {
+    const r = run(scenario('false proximity', [{ phases: [hover(300, 500, 300), writeAt(33, 500, 300), hover(400, 500, 300)] }], { strokes: 0 }));
     expect(r.controller.doc.strokeCount).toBe(0);
-    expect(kinds(r)).toContain('stroke-cancel');
+    expect(kinds(r)).not.toContain('stroke-begin');
     expect(r.controller.history.undoDepth).toBe(0);
   });
 
@@ -112,8 +112,8 @@ describe('dots, punctuation, and release (F10)', () => {
         {
           phases: [
             hover(300, 400, 300),
-            pinchMove(500, 400, 300, 600, 300),
-            { ms: 66, pose: POSES.pinch(0.33), path: move(600, 296, 600, 284) },
+            writeMove(500, 400, 300, 600, 300),
+            { ms: 66, pose: POSES.open, path: move(600, 296, 600, 284) },
             { ms: 200, pose: POSES.open, path: still(600, 270) },
           ],
         },
@@ -126,15 +126,15 @@ describe('dots, punctuation, and release (F10)', () => {
 
 describe('two hands (F14, F15)', () => {
   const twoHands = (secondStart: number, firstMove: number): HandScript[] => [
-    { phases: [hover(300, 500, 360), pinchMove(secondStart, 500, 360, 500 + firstMove, 360), pinchMove(600, 500 + firstMove, 360, 420, 360), hover(300, 420, 360)] },
-    { phases: [hover(300 + secondStart, 800, 360), pinchMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
+    { phases: [hover(300, 500, 360), writeMove(secondStart, 500, 360, 500 + firstMove, 360), writeMove(600, 500 + firstMove, 360, 420, 360), hover(300, 420, 360)] },
+    { phases: [hover(300 + secondStart, 800, 360), writeMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
   ];
 
   it('zooms with both hands and leaves no phantom stroke', () => {
     const r = run(
       scenario('zoom', [
-        { phases: [hover(300, 500, 360), pinchMove(600, 500, 360, 420, 360), hover(300, 420, 360)] },
-        { phases: [hover(300, 800, 360), pinchMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
+        { phases: [hover(300, 500, 360), writeMove(600, 500, 360, 420, 360), hover(300, 420, 360)] },
+        { phases: [hover(300, 800, 360), writeMove(600, 800, 360, 880, 360), hover(300, 880, 360)], handedness: 'Left' },
       ], { strokes: 0 }),
     );
     expect(r.controller.doc.strokeCount).toBe(0);
@@ -157,11 +157,11 @@ describe('two hands (F14, F15)', () => {
     expect(kinds(r)).toContain('transform-begin');
   });
 
-  it('ignores a second person’s hand that arrives already pinched', () => {
+  it('ignores a second person’s hand that arrives with the writing gesture held', () => {
     const r = run(
       scenario('second person', [
         { phases: [hover(1000, 400, 300)] },
-        { start: 300, phases: [pinchMove(500, 900, 300, 950, 320)], palmPx: 55, handedness: 'Left' },
+        { start: 300, phases: [writeMove(500, 900, 300, 950, 320)], palmPx: 55, handedness: 'Left' },
       ], { strokes: 0 }),
     );
     expect(r.controller.doc.strokeCount).toBe(0);
@@ -176,7 +176,7 @@ describe('erasing (F17, F18)', () => {
         {
           phases: [
             hover(300, 400, 300),
-            pinchMove(500, 400, 300, 700, 300),
+            writeMove(500, 400, 300, 700, 300),
             hover(400, 450, 250),
             { ms: 700, pose: POSES.fist, path: move(450, 250, 650, 340) },
             hover(300, 650, 340),
@@ -194,7 +194,7 @@ describe('erasing (F17, F18)', () => {
   it('a brief fist (shorter than arming) erases nothing', () => {
     const r = run(
       scenario('brief fist', [
-        { phases: [hover(300, 400, 300), pinchMove(500, 400, 300, 700, 300), hover(300, 500, 300), { ms: 120, pose: POSES.fist, path: still(550, 300) }, hover(300, 550, 300)] },
+        { phases: [hover(300, 400, 300), writeMove(500, 400, 300, 700, 300), hover(300, 500, 300), { ms: 120, pose: POSES.fist, path: still(550, 300) }, hover(300, 550, 300)] },
       ], { strokes: 1 }),
     );
     expect(r.controller.doc.strokeCount).toBe(1);
@@ -209,7 +209,7 @@ describe('fist safety (F17)', () => {
         {
           phases: [
             hover(300, 400, 300),
-            pinchMove(500, 400, 300, 700, 300),
+            writeMove(500, 400, 300, 700, 300),
             hover(400, 450, 260),
             { ms: 700, pose: withRotation(POSES.fist, 50, 25, 20), path: move(450, 260, 650, 340) },
             hover(300, 650, 340),
@@ -225,7 +225,7 @@ describe('fist safety (F17)', () => {
     for (const pose of [POSES.halfCurl, POSES.relaxed, POSES.tightPinch(0.12), POSES.pointing]) {
       const r = run(
         scenario('not a fist', [
-          { phases: [hover(300, 400, 300), pinchMove(500, 400, 300, 700, 300), hover(300, 500, 300), { ms: 1500, pose, path: move(500, 280, 600, 320) }, hover(300, 600, 320)] },
+          { phases: [hover(300, 400, 300), writeMove(500, 400, 300, 700, 300), hover(300, 500, 300), { ms: 1500, pose, path: move(500, 280, 600, 320) }, hover(300, 600, 320)] },
         ], {}),
       );
       expect(kinds(r).some((k) => k.startsWith('erase')), JSON.stringify(pose.index)).toBe(false);
@@ -235,17 +235,18 @@ describe('fist safety (F17)', () => {
 });
 
 describe('dropouts and re-entry (F19)', () => {
-  it('reconnects a short gap during slow writing without inventing a curve', () => {
-    const r = run(
-      scenario('short gap', [{ phases: [hover(300, 400, 300), pinchMove(1500, 400, 300, 490, 300), hover(300, 490, 300)] }], { strokes: 1 }, { gaps: [[900, 966]] }),
-    );
+  it('ends a stroke on the first missing hand and never bridges to its return', () => {
+    const record = scenario('short gap', [{ phases: [hover(300, 400, 300), writeMove(1500, 400, 300, 490, 300), hover(300, 490, 300)] }], { strokes: 1 }, { gaps: [[900, 966]] });
+    const missing = { t: 910, ageMs: 30, hands: [] };
+    const r = run({ ...record, frames: [...record.frames, missing].sort((a, b) => a.t - b.t) });
+    expect(Math.max(...points(r.controller.doc.strokes[0]!).map((p) => p.x))).toBeLessThan(440);
     expect(r.controller.doc.strokeCount).toBe(1);
     expect(kinds(r).filter((k) => k === 'stroke-begin')).toHaveLength(1);
   });
 
-  it('ends the stroke after a long gap and does not resume while still pinched', () => {
+  it('ends the stroke after a long gap and does not resume while still holding the writing gesture', () => {
     const r = run(
-      scenario('long gap', [{ phases: [hover(300, 400, 300), pinchMove(1500, 400, 300, 700, 300), hover(300, 700, 300)] }], { strokes: 1 }, { gaps: [[900, 1150]] }),
+      scenario('long gap', [{ phases: [hover(300, 400, 300), writeMove(1500, 400, 300, 700, 300), hover(300, 700, 300)] }], { strokes: 1 }, { gaps: [[900, 1150]] }),
     );
     expect(kinds(r).filter((k) => k === 'stroke-begin')).toHaveLength(1);
     expect(r.controller.doc.strokeCount).toBe(1);
@@ -254,10 +255,10 @@ describe('dropouts and re-entry (F19)', () => {
     expect(maxX).toBeLessThan(400 + (300 * 600) / 1500 + 8);
   });
 
-  it('does not restart ink when a pinched hand re-enters after leaving the reach area', () => {
+  it('does not restart ink when a hand re-enters with the writing gesture held after leaving the reach area', () => {
     const r = run(
       scenario('reenter', [
-        { phases: [hover(300, 400, 300), pinchMove(400, 400, 300, 600, 300), pinchMove(300, 600, 300, 1400, 300), pinchMove(400, 1400, 300, 700, 320), hover(200, 700, 320)] },
+        { phases: [hover(300, 400, 300), writeMove(400, 400, 300, 600, 300), writeMove(300, 600, 300, 1400, 300), writeMove(400, 1400, 300, 700, 320), hover(200, 700, 320)] },
       ], { strokes: 1 }),
     );
     expect(kinds(r).filter((k) => k === 'stroke-begin')).toHaveLength(1);
@@ -268,7 +269,7 @@ describe('dropouts and re-entry (F19)', () => {
 describe('controls by hand (F21)', () => {
   it('activates a control once and never draws when the held pinch moves onto the board', () => {
     const record = scenario('control', [
-      { phases: [hover(300, 60, 200), pinchAt(300, 60, 200), pinchMove(400, 60, 200, 500, 300), hover(300, 500, 300)] },
+      { phases: [hover(300, 60, 200), { ms: 300, pose: POSES.pinch(), path: still(60, 200) }, { ms: 400, pose: POSES.pinch(), path: move(60, 200, 500, 300) }, hover(300, 500, 300)] },
     ], { strokes: 0 });
     const parsed = parseReplay(JSON.parse(JSON.stringify(record)));
     if (!parsed.ok) throw new Error('invalid');
@@ -280,7 +281,7 @@ describe('controls by hand (F21)', () => {
 
 describe('discontinuities (F12)', () => {
   it('does not stretch ink to an isolated landmark jump', () => {
-    const record = scenario('outlier', [{ phases: [hover(300, 400, 300), pinchMove(1200, 400, 300, 520, 300), hover(300, 520, 300)] }], { strokes: 1 });
+    const record = scenario('outlier', [{ phases: [hover(300, 400, 300), writeMove(1200, 400, 300, 520, 300), hover(300, 520, 300)] }], { strokes: 1 });
     // Corrupt one frame: thumb and index tips jump 25 camera px while the palm stays.
     const frames = record.frames.map((f, i) => {
       if (i !== 25 || f.hands.length === 0) return f;
@@ -299,7 +300,7 @@ describe('discontinuities (F12)', () => {
 
 describe('determinism (F32)', () => {
   it('produces the identical document for identical records', () => {
-    const make = () => scenario('det', [{ phases: [hover(300, 400, 300), pinchMove(900, 400, 300, 800, 500), hover(300, 800, 500)] }], { strokes: 1 }, { noisePx: 0.5 });
+    const make = () => scenario('det', [{ phases: [hover(300, 400, 300), writeMove(900, 400, 300, 800, 500), hover(300, 800, 500)] }], { strokes: 1 }, { noisePx: 0.5 });
     const a = run(make());
     const b = run(make());
     const flat = (r: ReturnType<typeof run>) => r.controller.doc.strokes.map((s) => points(s));

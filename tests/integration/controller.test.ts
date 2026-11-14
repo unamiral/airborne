@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG, patchConfig, type AppConfig } from '../../src/app/confi
 import { BoardController } from '../../src/board/controller';
 import { boardPoint } from '../../src/core/coords';
 import { runReplay } from '../../src/dev/replay-runner';
-import { hover, pinchMove, scenario } from '../support/scenarios';
+import { hover, writeMove, scenario } from '../support/scenarios';
 
 const bp = boardPoint;
 
@@ -128,7 +128,7 @@ describe('board controller invariants', () => {
 
 describe('prediction never reaches the document (F13)', () => {
   it('produces an identical board with the prediction flag off and on', () => {
-    const record = scenario('pred', [{ phases: [hover(300, 400, 300), pinchMove(900, 400, 300, 800, 420), hover(300, 800, 420)] }], { strokes: 1 }, { noisePx: 0.4 });
+    const record = scenario('pred', [{ phases: [hover(300, 400, 300), writeMove(900, 400, 300, 800, 420), hover(300, 800, 420)] }], { strokes: 1 }, { noisePx: 0.4 });
     const off = runReplay(record, { config: config({ prediction: { enabled: false } }) });
     const on = runReplay(record, { config: config({ prediction: { enabled: true } }) });
     const dump = (r: typeof off) => r.controller.doc.strokes.map((s) => {

@@ -11,12 +11,13 @@
  * - One stroke, one erase gesture, or one clear is one history entry.
  * - Views stay finite with clamped scale.
  */
+import { enhanceInk, type Enhancement } from '../beautify/enhance';
 import type { AppConfig } from '../app/config';
 import { type BoardPoint } from '../core/coords';
 import { BoardDocument } from './document';
 import { History } from './history';
 import { strokesHitByCapsule } from './hit-test';
-import { StrokeBuilder, type Stroke } from './stroke';
+import { StrokeBuilder, strokeFromPoints, type Stroke } from './stroke';
 import { IDENTITY_VIEW, TwoHandTransform, fitView, isValidView, panBy, toWorld, zoomAt, type View } from './view';
 
 export type Tool = 'pen' | 'eraser' | 'move';
@@ -197,6 +198,24 @@ export class BoardController {
     if (this.activeValue === null) return;
     this.activeValue = null;
     this.emit('active');
+  }
+
+  /** Applies bounded edits as a single reversible action. */
+  beautify(level: Enhancement): boolean {
+    this.closeTransientWork();
+    const edits = enhanceInk(this.doc.strokes, level, this.viewValue.scale);
+    if (edits.length === 0) return false;
+    const originals = edits.map((edit) => edit.original);
+    const strokes = edits.map(({ original, coordinates }) => {
+      const rebuilt = strokeFromPoints(this.nextId++, original.seq, { color: original.color, width: original.width }, coordinates);
+      return { ...rebuilt, corners: original.corners };
+    });
+    this.doc.remove(new Set(originals.map((s) => s.id)));
+    this.doc.insert(strokes);
+    this.history.record({ kind: 'replace', strokes, originals });
+    this.emit('doc');
+    this.emit('history');
+    return true;
   }
 
   // --- View ----------------------------------------------------------------

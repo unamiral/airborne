@@ -78,13 +78,14 @@ function parseHands(value: unknown, where: string, errors: string[]): HandPayloa
     }
     const ok = (arr: unknown): arr is number[] =>
       Array.isArray(arr) && arr.length === LANDMARK_VALUES && arr.every((n) => isFinite(n));
-    if (!ok(h.landmarks) || !ok(h.world)) {
-      errors.push(`${where}.hands[${i}]: landmarks/world must be ${LANDMARK_VALUES} finite numbers`);
+    const world = ok(h.world) ? h.world : Array.isArray(h.world) && h.world.length === 0 ? [] : null;
+    if (!ok(h.landmarks) || world === null) {
+      errors.push(`${where}.hands[${i}]: expected ${LANDMARK_VALUES} finite image landmarks and finite or empty world landmarks`);
       return;
     }
     const handedness = h.handedness === 'Left' || h.handedness === 'Right' ? h.handedness : 'Unknown';
     const score = isFinite(h.handednessScore) ? Math.min(1, Math.max(0, h.handednessScore)) : 0;
-    hands.push({ landmarks: h.landmarks, world: h.world, handedness, handednessScore: score });
+    hands.push({ landmarks: h.landmarks, world, handedness, handednessScore: score });
   });
   return hands;
 }
@@ -106,7 +107,7 @@ export function parseReplay(value: unknown, limits: ReplayLimits = DEFAULT_REPLA
   if (surface === null || !isPositive(surface.width) || !isPositive(surface.height) || !isFinite(surface.stripWidth)) {
     errors.push('surface: width/height/stripWidth required');
   }
-  if (value.configVersion !== CONFIG_VERSION && value.configVersion !== 1) {
+  if (value.configVersion !== CONFIG_VERSION && value.configVersion !== 3 && value.configVersion !== 2 && value.configVersion !== 1) {
     errors.push(`configVersion: expected 1..${CONFIG_VERSION}`);
   }
   const config = validateConfig(migrateConfig(value.configVersion, value.config));
