@@ -15,7 +15,7 @@ import type { BackendPreference, WorkerLike } from '../tracking/tracker-client';
 import { CameraPanel } from '../ui/camera-panel';
 import { el, setText } from '../ui/dom';
 import { CameraPreview } from '../ui/preview';
-import { resolveAssets } from './assets';
+import { resolveAssets, type ResolvedAssets } from './assets';
 import { CameraSession, type SessionState } from './camera-session';
 import { DEFAULT_CONFIG, type AppConfig } from './config';
 import { HandInput } from './hand-input';
@@ -31,6 +31,8 @@ export interface AppHandle {
   /** Feeds a tracking result exactly as the camera path does (dev replay). */
   readonly injectResult: (sourceTimeMs: number, hands: readonly HandPayload[], ageMs: number, camera: { width: number; height: number }) => void;
   readonly layout: () => SurfaceLayout;
+  readonly createWorker: () => WorkerLike;
+  readonly assets: ResolvedAssets;
   lastHands: readonly HandPayload[];
 }
 
@@ -62,6 +64,7 @@ export function createApp(root: HTMLElement): AppHandle {
   const sink: MetricsSink = metrics ?? noopMetrics;
   const config: AppConfig = DEFAULT_CONFIG;
   const inputScale = inputScaleFromUrl();
+  const assets = resolveAssets(document.baseURI);
 
   // --- DOM -----------------------------------------------------------------
   const canvas = el('canvas', {
@@ -245,7 +248,7 @@ export function createApp(root: HTMLElement): AppHandle {
     },
     requestAnimationFrame: (callback) => requestAnimationFrame(callback),
     cancelAnimationFrame: (handle) => cancelAnimationFrame(handle),
-    assets: resolveAssets(document.baseURI),
+    assets,
     backend: backendFromUrl(),
     createWorker: createInferenceWorker,
     metrics: sink,
@@ -277,7 +280,9 @@ export function createApp(root: HTMLElement): AppHandle {
   panel.render(session.state, false);
   refreshMode();
 
-  setInterval(() => hands.checkLoss(performance.now()), 50);
+  setInterval(() => {
+    if (hands.lossCheckEnabled) hands.checkLoss(performance.now());
+  }, 50);
   globalThis.addEventListener('pagehide', () => session.stop());
 
   const handle: AppHandle = {
@@ -288,6 +293,8 @@ export function createApp(root: HTMLElement): AppHandle {
     hands,
     config: () => config,
     layout: () => layoutValue,
+    createWorker: createInferenceWorker,
+    assets,
     injectResult: (sourceTimeMs, payload, ageMs, camera) => {
       hands.setCamera(camera);
       handle.lastHands = payload;

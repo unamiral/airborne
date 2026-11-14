@@ -45,6 +45,8 @@ export class HandInput {
   private lost = false;
   private armProgress = 0;
   private blocked = false;
+  /** Disabled during dev replay, whose timeline already encodes losses. */
+  lossCheckEnabled = true;
   /** Main-thread observation time of the newest applied result. */
   latestObservedAt: number | null = null;
   pendingDrawObservedAt: number | null = null;
