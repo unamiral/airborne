@@ -8,6 +8,8 @@
 import type { AppHandle } from '../app/app';
 import type { SeriesName } from '../app/metrics';
 import type { HandPayload } from '../tracking/protocol';
+import { boardPoint } from '../core/coords';
+import { renderStrokes } from '../render/full-render';
 import { startTracker } from '../tracking/tracker-client';
 import { el } from '../ui/dom';
 import { parseReplay } from './replay-format';
@@ -19,6 +21,13 @@ export interface DevHandle extends AppHandle {
   readonly detectImages: (images: readonly Blob[], backend: 'GPU' | 'CPU') => Promise<HandPayload[][]>;
   /** Serialized board content for equality checks. */
   readonly boardDump: () => number[][];
+  /**
+   * Composes a frame without overlays and compares the visible canvas with a
+   * fresh, uncached render of the document at the same view.
+   */
+  readonly compareWithReference: () => { ink: number; mismatched: number; maxDiff: number; pixels: number };
+  /** Adds `strokes` handwriting-like strokes of `points` samples each (benchmark workload). */
+  readonly loadSyntheticBoard: (strokes: number, points: number, seed: number) => void;
 }
 
 declare global {
@@ -102,6 +111,63 @@ export function installDevtools(app: AppHandle): void {
         return out;
       } finally {
         tracker.dispose();
+      }
+    },
+    compareWithReference: () => {
+      const r = app.renderer;
+      const canvas = document.querySelector<HTMLCanvasElement>('canvas.board');
+      if (canvas === null) throw new Error('board canvas missing');
+      r.setOverlay({ cursors: [], prediction: null });
+      r.invalidate();
+      r.frame();
+      const { backingWidth: w, backingHeight: h, rasterScale, cssWidth, cssHeight } = r.stats;
+      const read = (draw: (ctx: OffscreenCanvasRenderingContext2D) => void): Uint8ClampedArray => {
+        const off = new OffscreenCanvas(w, h);
+        const ctx = off.getContext('2d', { willReadFrequently: true });
+        if (ctx === null) throw new Error('2D context unavailable');
+        draw(ctx);
+        return ctx.getImageData(0, 0, w, h).data;
+      };
+      const visible = read((ctx) => ctx.drawImage(canvas, 0, 0));
+      const reference = read((ctx) => renderStrokes(ctx, app.controller.doc.strokes, app.controller.view, rasterScale, cssWidth, cssHeight));
+      let ink = 0;
+      let mismatched = 0;
+      let maxDiff = 0;
+      for (let i = 0; i < visible.length; i += 4) {
+        const d = Math.max(
+          Math.abs(visible[i]! - reference[i]!),
+          Math.abs(visible[i + 1]! - reference[i + 1]!),
+          Math.abs(visible[i + 2]! - reference[i + 2]!),
+        );
+        if (reference[i]! < 200 || reference[i + 1]! < 200 || reference[i + 2]! < 200) ink++;
+        if (d > 96) mismatched++;
+        if (d > maxDiff) maxDiff = d;
+      }
+      return { ink, mismatched, maxDiff, pixels: w * h };
+    },
+    loadSyntheticBoard: (strokes: number, points: number, seed: number): void => {
+      let a = seed >>> 0;
+      const random = (): number => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const c = app.controller;
+      const { cssWidth, cssHeight } = app.renderer.stats;
+      for (let s = 0; s < strokes; s++) {
+        let x = 40 + random() * (cssWidth - 80);
+        let y = 40 + random() * (cssHeight - 80);
+        let heading = random() * Math.PI * 2;
+        c.beginStroke(boardPoint(x, y), false);
+        for (let i = 1; i < points; i++) {
+          heading += (random() - 0.5) * 0.6;
+          x += Math.cos(heading) * 1.2;
+          y += Math.sin(heading) * 1.2;
+          c.extendStroke(boardPoint(x, y));
+        }
+        c.commitStroke();
       }
     },
     boardDump: (): number[][] =>

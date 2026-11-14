@@ -61,6 +61,8 @@ interface Job {
 
 export interface RendererStats {
   readonly rasterScale: number;
+  readonly cssWidth: number;
+  readonly cssHeight: number;
   readonly backingWidth: number;
   readonly backingHeight: number;
   readonly cacheBytes: number;
@@ -159,6 +161,8 @@ export class BoardRenderer {
     const layers = 1 + (this.front !== null ? 1 : 0) + (this.back !== null ? 1 : 0);
     return {
       rasterScale: this.rs,
+      cssWidth: this.cssWidth,
+      cssHeight: this.cssHeight,
       backingWidth: w,
       backingHeight: h,
       cacheBytes: w * h * 4 * layers,
@@ -389,12 +393,14 @@ export class BoardRenderer {
     const back = this.back!;
     const affine = this.affineFor(job.view);
     const viewport = this.worldViewport(job.view);
-    const budget = this.config.rebuildChunkMs;
+    // The check runs after each stroke, so stop at 85% of the budget to keep
+    // the chunk (including the last stroke drawn) within rebuildChunkMs.
+    const budget = this.config.rebuildChunkMs * 0.85;
     const chunkStart = performance.now();
     while (job.index < job.strokes.length) {
       const s = job.strokes[job.index++]!;
       if (this.visibleStroke(s, viewport)) drawStrokeInto(back.ctx, s, affine);
-      if ((job.index & 15) === 0 && performance.now() - chunkStart > budget) break;
+      if (performance.now() - chunkStart > budget) break;
     }
     this.metrics.sample('rebuildChunkMs', performance.now() - chunkStart);
     if (job.index < job.strokes.length) return;
@@ -490,6 +496,10 @@ export class BoardRenderer {
     if (front !== null && fv !== null) {
       if (sameView(fv, view)) {
         ctx.drawImage(front.canvas, 0, 0);
+      } else if (fv.scale === view.scale) {
+        // Pure pan: blit at a whole-pixel offset instead of resampling the
+        // whole cache (sub-pixel jitter ≤ 0.5 device px while moving).
+        ctx.drawImage(front.canvas, Math.round((view.tx - fv.tx) * rs), Math.round((view.ty - fv.ty) * rs));
       } else {
         const k = view.scale / fv.scale;
         ctx.setTransform(k, 0, 0, k, (view.tx - fv.tx * k) * rs, (view.ty - fv.ty * k) * rs);
