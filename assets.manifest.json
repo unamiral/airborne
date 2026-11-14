@@ -1,0 +1,23 @@
+{
+  "$comment": "Pinned runtime ML assets. scripts/assets.mjs copies/downloads these into public/ and verifies every checksum. src/app/assets.ts must agree (enforced by tests/unit/assets-manifest.test.ts).",
+  "mediapipe": {
+    "package": "@mediapipe/tasks-vision",
+    "version": "1.2.3",
+    "license": "Apache-2.0",
+    "publicDir": "assets/mediapipe/1.2.3",
+    "files": {
+      "vision_wasm_module_internal.js": "d29996249490361715c769c6a49b43ad47e6ac9a28a8e8bce8d02b238e897851",
+      "vision_wasm_module_internal.wasm": "a269e84b12aefc93c9d6a4d62b01f41e5434a9fa941533bb8e75b1e3d1669e46"
+    }
+  },
+  "model": {
+    "name": "hand_landmarker",
+    "variant": "float16",
+    "version": "1",
+    "license": "Apache-2.0 (MediaPipe Hands model card)",
+    "sourceUrl": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+    "bytes": 7819105,
+    "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+    "publicPath": "assets/models/hand_landmarker/float16-1/hand_landmarker.task"
+  }
+}

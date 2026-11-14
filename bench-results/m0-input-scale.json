@@ -1,0 +1,85 @@
+{
+ "environment": {
+  "date": "2026-11-14T17:10:23.106Z",
+  "cpu": "Apple M2",
+  "cores": 8,
+  "memoryGiB": 8,
+  "os": "darwin 27.2.0",
+  "browser": "Chromium 159.0.8154.6",
+  "mode": "new headless (channel=chromium), Playwright-controlled",
+  "gpuRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+  "viewport": "1280x800",
+  "devicePixelRatio": 1,
+  "camera": "Chromium fake device playing tests/.cache/fake-camera.mjpeg (640x480, 30 fps, MediaPipe test photos)",
+  "powerMode": "not controlled (development laptop, unknown power source/thermal state)",
+  "displayRefresh": "headless: no physical display"
+ },
+ "gpu@1": {
+  "inference": {
+   "count": 808,
+   "mean": 24.891089108885534,
+   "p50": 23.5,
+   "p95": 33.46500000013038,
+   "p99": 35.892999998535956,
+   "max": 39.59999999962747
+  },
+  "acceptedPerSecond": 26.933333333333334,
+  "counters": {
+   "accepted": 808,
+   "sourceFrames": 900,
+   "admitted": 808,
+   "busySkips": 92
+  }
+ },
+ "gpu@0.5": {
+  "inference": {
+   "count": 673,
+   "mean": 26.160475482920635,
+   "p50": 26.199999999254942,
+   "p95": 34.899999999254945,
+   "p99": 36.68399999983608,
+   "max": 43.80000000074506
+  },
+  "acceptedPerSecond": 22.433333333333334,
+  "counters": {
+   "sourceFrames": 900,
+   "admitted": 674,
+   "accepted": 673,
+   "busySkips": 226
+  }
+ },
+ "cpu@1": {
+  "inference": {
+   "count": 487,
+   "mean": 36.30944558524085,
+   "p50": 36.59999999962747,
+   "p95": 38.19999999925494,
+   "p99": 52.69999999925494,
+   "max": 55.80000000074506
+  },
+  "acceptedPerSecond": 16.233333333333334,
+  "counters": {
+   "sourceFrames": 900,
+   "admitted": 488,
+   "accepted": 487,
+   "busySkips": 412
+  }
+ },
+ "cpu@0.5": {
+  "inference": {
+   "count": 474,
+   "mean": 37.3200421940834,
+   "p50": 37.09999999962747,
+   "p95": 43.5,
+   "p99": 55.75100000007075,
+   "max": 80.70000000111759
+  },
+  "acceptedPerSecond": 15.8,
+  "counters": {
+   "sourceFrames": 900,
+   "busySkips": 426,
+   "accepted": 474,
+   "admitted": 474
+  }
+ }
+}
