@@ -1,5 +1,5 @@
 import './styles.css';
-import welcomeImage from './assets/welcome-cegep.png';
+import welcomeImage from './assets/welcome-artwork.png';
 import { createApp } from './app/app';
 
 const root = document.getElementById('app');
@@ -34,3 +34,4 @@ splash.addEventListener('click', () => {
     window.setTimeout(enter, 800);
   }
 }, { once: true });
+
