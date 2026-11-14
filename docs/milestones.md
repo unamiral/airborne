@@ -57,3 +57,48 @@ with their context, failures and unmeasured claims, and the next step
 ### Next step
 M1: mapping, identity, features, One Euro filter, pinch reducer with
 provisional onset and release hold, incremental ink, replay-based signal gates.
+
+## M1 — Writing quality (branch `m1-writing-quality`)
+
+### Completed
+- Isotropic camera→surface mapping with a single mirror and reach setting
+  (ADR 0004 documents the deviation from per-axis stretching).
+- Hand features from world landmarks: pinch ratio, plausible pinch pose, fist
+  from joint bend + tip-to-palm distance; two-hand identity with ambiguity.
+- One Euro pen filter (matches the authors' reference to 1e-9), tuned presets
+  (ADR 0003), discontinuity detector (rejects isolated/multi-landmark jumps,
+  never fast sweeps or corners in tests).
+- Gesture reducer: provisional onset at the first pinched sample, 2-sample /
+  20 ms confirmation, dots from validated taps, release hold that drops
+  opening-finger samples, short-dropout reconnection (≤ 80 ms, ≤ 8 px, same
+  identity, still pinched), await-release after loss/out-of-reach/strip.
+- World-space strokes with spacing retention, live endpoint, corner flags;
+  midpoint-quadratic geometry with exact corners; incremental ink rendering
+  (finalized segments appended to the cache, live tail drawn per frame).
+- Prediction implemented behind a flag (off).
+- Deterministic replay runner, scripted synthetic hand scenarios, browser
+  replay player, real-model landmark fixtures from test photos.
+
+### Checks run
+- Vitest: 213 tests (unit + integration), including 37 reducer tests with
+  randomized invariants (30 seeds × 400 steps), 18 end-to-end replay
+  scenarios, signal gates, prediction overshoot, controller invariants.
+- Playwright: 13 tests (10 production, 3 bench: browser replay, playback-speed
+  invariance, real model on still images).
+- `npm run report:signal` → docs/signal-report.md.
+
+### Measurements
+- Signal gates (synthetic, Balanced, 30 Hz): see ADR 0003 and the report.
+- Input math + reducer in the browser (bench build, headless shell, Apple M2):
+  p50 0.10 ms, p95 0.28 ms, max 0.80 ms over 65 results (target p95 ≤ 1 ms).
+
+### Failures and unmeasured
+- Synthetic shape gate at σ = 2 px, sharp held-out vertices, 15 Hz corners:
+  fail (ADR 0003).
+- Not done: five-minute live writing trial, real-camera recordings, raw vs
+  filtered comparison on real traces, user trials of presets.
+- A thumbs-up counts as a fist (four-finger definition, as specified).
+
+### Next step
+M2: board navigation (two-hand transform, pointer pan/zoom, reset/fit),
+renderer cache behavior under pan/zoom, F14–F16/F29 browser checks.

@@ -50,7 +50,8 @@ it('writes docs/signal-report.md', () => {
     lines.push('', '### Moving traces at 30 Hz: lag (ms) / p95 shape error (px)', '');
     const names = moving(presets.balanced!, 30, 1).map((m) => `${m.name} (${m.speed} px/s)`);
     lines.push(`| Preset | σ | ${names.join(' | ')} | median lag |`, `|---|---:|${names.map(() => '---:').join('|')}|---:|`);
-    for (const [name, p] of Object.entries(presets)) {
+    const rawParams = { minCutoffHz: 1e9, beta: 0, derivativeCutoffHz: 1 };
+    for (const [name, p] of [['raw (unfiltered)', rawParams] as const, ...Object.entries(presets)]) {
       for (const noise of [1, 2]) {
         const mv = moving(p, 30, noise);
         const lags = mv.map((m) => m.lagMs).sort((a, b) => a - b);

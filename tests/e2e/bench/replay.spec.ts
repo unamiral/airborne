@@ -31,6 +31,11 @@ test('replayed hand input draws strokes and records draw-submission timing (F09,
   await expect.poll(() => inkPixels(page)).toBeGreaterThan(300);
   const submits = await page.evaluate(() => window.__air!.metrics!.summary('drawSubmitMs').count);
   expect(submits).toBeGreaterThan(10);
+  // Plan §12: input math + reducer p95 ≤ 1 ms per accepted result (headless shell, dev machine).
+  const input = await page.evaluate(() => window.__air!.metrics!.summary('inputMs'));
+  test.info().annotations.push({ type: 'inputMs', description: JSON.stringify(input) });
+  console.log('inputMs', JSON.stringify(input));
+  expect(input.p95).toBeLessThanOrEqual(1);
 });
 
 test('playback speed does not change the committed board (F32)', async ({ page }) => {
