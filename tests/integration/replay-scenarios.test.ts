@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { Stroke } from '../../src/board/stroke';
 import { parseReplay, type ReplayRecord } from '../../src/dev/replay-format';
 import { runReplay } from '../../src/dev/replay-runner';
-import { POSES } from '../support/hands';
+import { POSES, withRotation } from '../support/hands';
 import { hover, move, pinchAt, pinchMove, scenario, still, type HandScript } from '../support/scenarios';
 
 /** Board-local CSS px of a stroke point (identity view; board starts after the 120 px strip). */
@@ -199,6 +199,38 @@ describe('erasing (F17, F18)', () => {
     );
     expect(r.controller.doc.strokeCount).toBe(1);
     expect(kinds(r)).not.toContain('erase-begin');
+  });
+});
+
+describe('fist safety (F17)', () => {
+  it('a rotated fist still arms and erases', () => {
+    const r = run(
+      scenario('rotated fist', [
+        {
+          phases: [
+            hover(300, 400, 300),
+            pinchMove(500, 400, 300, 700, 300),
+            hover(400, 450, 260),
+            { ms: 700, pose: withRotation(POSES.fist, 50, 25, 20), path: move(450, 260, 650, 340) },
+            hover(300, 650, 340),
+          ],
+        },
+      ], { strokes: 0 }),
+    );
+    expect(kinds(r)).toContain('erase-begin');
+    expect(r.controller.doc.strokeCount).toBe(0);
+  });
+
+  it('partial curls, relaxed hands, and pinches with curled fingers never arm the eraser', () => {
+    for (const pose of [POSES.halfCurl, POSES.relaxed, POSES.tightPinch(0.12), POSES.pointing]) {
+      const r = run(
+        scenario('not a fist', [
+          { phases: [hover(300, 400, 300), pinchMove(500, 400, 300, 700, 300), hover(300, 500, 300), { ms: 1500, pose, path: move(500, 280, 600, 320) }, hover(300, 600, 320)] },
+        ], {}),
+      );
+      expect(kinds(r).some((k) => k.startsWith('erase')), JSON.stringify(pose.index)).toBe(false);
+      expect(r.controller.doc.strokeCount).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 

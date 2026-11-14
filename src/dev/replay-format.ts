@@ -6,7 +6,7 @@
  * identity, features, filtering, the gesture reducer and the board, but not
  * the detector or the camera.
  */
-import { CONFIG_VERSION, validateConfig, type AppConfig } from '../app/config';
+import { CONFIG_VERSION, migrateConfig, validateConfig, type AppConfig } from '../app/config';
 import { LANDMARK_VALUES, type HandPayload } from '../tracking/protocol';
 
 export const REPLAY_SCHEMA_VERSION = 1;
@@ -106,8 +106,10 @@ export function parseReplay(value: unknown, limits: ReplayLimits = DEFAULT_REPLA
   if (surface === null || !isPositive(surface.width) || !isPositive(surface.height) || !isFinite(surface.stripWidth)) {
     errors.push('surface: width/height/stripWidth required');
   }
-  if (value.configVersion !== CONFIG_VERSION) errors.push(`configVersion: expected ${CONFIG_VERSION}`);
-  const config = validateConfig(value.config);
+  if (value.configVersion !== CONFIG_VERSION && value.configVersion !== 1) {
+    errors.push(`configVersion: expected 1..${CONFIG_VERSION}`);
+  }
+  const config = validateConfig(migrateConfig(value.configVersion, value.config));
   if (!config.ok) errors.push(...config.errors.map((e) => `config.${e}`));
   const backend = isRecord(value.backend) ? value.backend : null;
   if (backend === null || typeof backend.delegate !== 'string' || typeof backend.modelSha256 !== 'string') {

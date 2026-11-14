@@ -437,6 +437,32 @@ describe('pause and interruption (F25 subset)', () => {
   });
 });
 
+describe('controls while paused', () => {
+  const resumeCtl = { kind: 'control', id: 'pause' } as const;
+
+  it('lets a hand press Resume while the board stays uneditable', () => {
+    const s = new Sim();
+    s.arm();
+    s.send({ kind: 'interrupt', reason: 'pause', pause: true });
+    // Board pinches do nothing while paused.
+    s.frame([sample(1, { ratio: OPEN })]);
+    s.frame([sample(1, { ratio: PINCH })]);
+    s.frame([sample(1, { ratio: PINCH })]);
+    expect(s.log).toEqual([]);
+    // Release, then pinch over the Resume control.
+    s.frame([sample(1, { ratio: OPEN, region: resumeCtl })]);
+    s.frame([sample(1, { ratio: PINCH, region: resumeCtl })]);
+    expect(s.frame([sample(1, { ratio: PINCH, region: resumeCtl })])).toEqual([{ kind: 'control-activate', id: 'pause' }]);
+    s.send({ kind: 'resume' });
+    // The pinch that pressed Resume cannot start drawing: it must be released.
+    s.frame([sample(1, { ratio: PINCH })]);
+    s.frame([sample(1, { ratio: PINCH })]);
+    expect(s.kinds()).toEqual(['control-activate']);
+    s.frame([sample(1, { ratio: OPEN })]);
+    expect(s.frame([sample(1, { ratio: PINCH })]).map((i) => i.kind)).toEqual(['stroke-begin']);
+  });
+});
+
 describe('determinism and invariants', () => {
   function randomRun(seed: number): Intent[] {
     const random = rng(seed);

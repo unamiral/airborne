@@ -40,21 +40,25 @@ export interface ScenarioOptions {
   /** Frame times (ms) at which every hand is missing (dropouts). */
   readonly gaps?: ReadonlyArray<readonly [number, number]>;
   readonly config?: AppConfig;
+  /** Interaction surface; defaults to SURFACE (1280×720, 120 px strip). */
+  readonly surface?: { readonly width: number; readonly height: number; readonly stripWidth: number };
 }
 
-const mapping = (config: AppConfig) =>
+type Surface = { readonly width: number; readonly height: number; readonly stripWidth: number };
+
+const mapping = (config: AppConfig, surface: Surface) =>
   new SurfaceMapping({
     cameraWidth: CAMERA.width,
     cameraHeight: CAMERA.height,
-    surfaceWidth: SURFACE.width,
-    surfaceHeight: SURFACE.height,
+    surfaceWidth: surface.width,
+    surfaceHeight: surface.height,
     reach: config.reach,
   });
 
 /** Inverse of SurfaceMapping.toSurface (unmirrored normalized camera coords). */
-export function surfaceToCamera(x: number, y: number, config: AppConfig = DEFAULT_CONFIG): { u: number; v: number } {
-  const { u0, u1, v0, v1 } = mapping(config).rect;
-  return { u: 1 - (u0 + (x / SURFACE.width) * (u1 - u0)), v: v0 + (y / SURFACE.height) * (v1 - v0) };
+export function surfaceToCamera(x: number, y: number, config: AppConfig = DEFAULT_CONFIG, surface: Surface = SURFACE): { u: number; v: number } {
+  const { u0, u1, v0, v1 } = mapping(config, surface).rect;
+  return { u: 1 - (u0 + (x / surface.width) * (u1 - u0)), v: v0 + (y / surface.height) * (v1 - v0) };
 }
 
 function handAtTime(script: HandScript, t: number): { pose: Pose; x: number; y: number } | null {
@@ -89,7 +93,7 @@ export function scenario(
     for (const script of hands) {
       const at = handAtTime(script, t);
       if (at === null) continue;
-      const cam = surfaceToCamera(at.x, at.y, config);
+      const cam = surfaceToCamera(at.x, at.y, config, options.surface ?? SURFACE);
       payloads.push(
         handAt(at.pose, {
           penU: cam.u,
@@ -110,7 +114,7 @@ export function scenario(
     createdAt: '2026-11-14T00:00:00.000Z',
     scenario: { name, description: name, tags: ['synthetic'] },
     camera: CAMERA,
-    surface: SURFACE,
+    surface: options.surface ?? SURFACE,
     configVersion: CONFIG_VERSION,
     config,
     backend: { delegate: 'synthetic', mediapipeVersion: 'n/a', modelSha256: 'n/a' },

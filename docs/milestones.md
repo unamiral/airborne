@@ -136,3 +136,37 @@ renderer cache behavior under pan/zoom, F14–F16/F29 browser checks.
 ### Next step
 M3: clear confirmation, pause/resume UI, lifecycle interruptions (blur,
 hidden tab, pagehide, track end, worker crash) wired into hand input.
+
+## M3 — Editing and recovery (branch `m3-editing-recovery`)
+
+### Completed
+- Semantic control strip (three columns of 48 px native buttons with labels,
+  pressed/disabled states): pen, eraser, move, pause/resume, six labelled
+  colors (≥ 4.5:1 contrast), three widths, undo, redo, clear, fit, 100%, and
+  placeholders for export/settings/help (M4). Every button is a hand target
+  with hover/press feedback that does not rely on color.
+- Clear confirmation dialog (`<dialog>`, Cancel focused by default, Escape
+  cancels); a modal dialog owns hand input (the board absorbs pinches).
+- Pause/resume by button, P, Escape, and hand; while paused, controls stay
+  operable by hand but the board is never edited (found while testing: a hand
+  that paused could not resume).
+- Lifecycle: blur and hidden tab pause editing and inference; > 30 s hidden
+  stops the camera with an explanation; pagehide stops everything; camera
+  unplug/track end and worker crash keep the board; 2D context restoration
+  rebuilds caches from the vector document.
+- Validated config updates applied at idle boundaries; CONFIG_VERSION 2 with
+  v1 → v2 migration for recorded fixtures.
+
+### Checks run
+- Vitest: 225 tests (adds paused-control, interruption timer, toolbar
+  routing/contrast, config migration, fist-safety replays).
+- Playwright: 36 tests (adds 5 production editing tests and 6 bench
+  hand-UI/lifecycle tests with the fake camera).
+
+### Failures and unmeasured
+- Not done: the five-minute zero-accidental-erase trials with three testers,
+  real camera unplug, real GPU context loss (only the restore path is wired).
+
+### Next step
+M4: settings (stabilizer, reach, camera, preview, fist gesture), guided
+practice, PNG export, accessibility pass.

@@ -315,6 +315,48 @@ function secondHandJoins(b: Builder, hands: readonly HandSample[], owner: TrackI
   return hands.find((h) => h.id !== owner && canStart(b, h) && onBoard(h));
 }
 
+/**
+ * While paused, the board is never edited, but controls stay operable so a
+ * hand can press Resume. Only control presses start; everything else is held.
+ */
+function pausedStep(
+  b: Builder,
+  state: ReducerState,
+  hands: readonly HandSample[],
+  byId: ReadonlyMap<TrackId, HandSample>,
+  t: number,
+  known: (id: TrackId) => boolean,
+): Step {
+  const mode = state.mode;
+  let next: Mode = mode;
+  if (mode.kind === 'ui-candidate' || mode.kind === 'ui-capture') {
+    const o = byId.get(mode.owner);
+    const f = b.flags(mode.owner);
+    if (!known(mode.owner) || (o !== undefined && o.usable && !f.pinched)) {
+      next = { kind: 'disabled' };
+    } else if (mode.kind === 'ui-candidate' && o !== undefined && o.usable) {
+      const samples = mode.samples + 1;
+      if (samples >= b.config.confirmSamples && t - mode.onsetT >= b.config.confirmMs) {
+        b.emit({ kind: 'control-activate', id: mode.control });
+        next = { kind: 'ui-capture', owner: mode.owner };
+      } else {
+        next = { ...mode, samples };
+      }
+    } else if (mode.kind === 'ui-candidate' && (o === undefined || !o.usable)) {
+      next = { kind: 'disabled' };
+    }
+  } else {
+    const starter = hands.filter((h) => canStart(b, h)).sort((x, y) => x.id - y.id)[0];
+    if (starter !== undefined) {
+      b.hold(starter.id);
+      if (starter.region.kind === 'control') {
+        next = { kind: 'ui-candidate', owner: starter.id, control: starter.region.id, onsetT: t, samples: 1 };
+      }
+    }
+  }
+  return { state: { mode: next, tracks: b.tracks, paused: true }, intents: b.intents };
+}
+
 function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'frame' }>, config: GestureConfig): Step {
   const b = new Builder(state.tracks, config);
   const { t, hands, expired } = input;
@@ -323,9 +365,9 @@ function frameStep(state: ReducerState, input: Extract<ReducerInput, { kind: 'fr
   const byId = new Map(hands.map((h) => [h.id, h]));
   const known = (id: TrackId): boolean => b.tracks.has(id);
 
-  if (state.paused) return { state: { ...state, tracks: b.tracks }, intents: [] };
-
   const mode = state.mode;
+  if (state.paused) return pausedStep(b, state, hands, byId, t, known);
+
   let next: Mode = mode;
   switch (mode.kind) {
     case 'disabled':
@@ -583,9 +625,12 @@ export function reduce(state: ReducerState, input: ReducerInput, config: Gesture
         intents: b.intents,
       };
     }
-    case 'resume':
+    case 'resume': {
       if (!state.paused) return { state, intents: [] };
-      return { state: { ...state, mode: { kind: 'hover' }, paused: false }, intents: [] };
+      // A hand that pressed Resume keeps its pinch captured until release.
+      const keep = state.mode.kind === 'ui-candidate' || state.mode.kind === 'ui-capture';
+      return { state: { ...state, mode: keep ? state.mode : { kind: 'hover' }, paused: false }, intents: [] };
+    }
     case 'reset': {
       const b = new Builder(new Map(), config);
       closeInteraction(b, state.mode);
