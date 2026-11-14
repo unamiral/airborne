@@ -49,6 +49,8 @@ export interface AppHandle {
   readonly createWorker: () => WorkerLike;
   readonly assets: ResolvedAssets;
   readonly command: (command: Command) => void;
+  /** Development-only observer of every accepted tracking result (recording). */
+  resultTap: ((sourceTimeMs: number, hands: readonly HandPayload[], ageMs: number, camera: { width: number; height: number }) => void) | null;
   lastHands: readonly HandPayload[];
 }
 
@@ -258,6 +260,8 @@ export function createApp(root: HTMLElement): AppHandle {
   });
 
   function activateTarget(id: string): void {
+    const target = root.querySelector<HTMLElement>(`[data-hand-target="${CSS.escape(id)}"]`);
+    if (target === null || target.hasAttribute('disabled') || target.closest('[hidden]') !== null) return;
     if (clearDialog.isOpen) {
       clearDialog.activate(id);
       return;
@@ -366,6 +370,17 @@ export function createApp(root: HTMLElement): AppHandle {
   new ResizeObserver(relayout).observe(root);
   new ResizeObserver(relayout).observe(strip);
   strip.addEventListener('scroll', relayout, { passive: true });
+  // Hand hit regions depend on which controls are visible and enabled; keep
+  // them current when buttons enable/disable or cards and dialogs show/hide.
+  let layoutScheduled = false;
+  new MutationObserver(() => {
+    if (layoutScheduled) return;
+    layoutScheduled = true;
+    requestAnimationFrame(() => {
+      layoutScheduled = false;
+      relayout();
+    });
+  }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'disabled', 'open'] });
   relayout();
 
   function refreshHandFeedback(): void {
@@ -522,6 +537,7 @@ export function createApp(root: HTMLElement): AppHandle {
       handle.lastHands = result.hands;
       if (hadHands !== result.hands.length > 0) panel.render(sessionState, result.hands.length > 0);
       hands.handleResult(result.sourceTimeMs, result.hands, observedAt);
+      handle.resultTap?.(result.sourceTimeMs, result.hands, now - observedAt, { width: video.videoWidth, height: video.videoHeight });
       const mapping = hands.pipeline.currentMapping;
       preview.draw(result.hands, now, mapping?.rect ?? null);
     },
@@ -561,6 +577,7 @@ export function createApp(root: HTMLElement): AppHandle {
       handle.lastHands = payload;
       hands.handleResult(sourceTimeMs, payload, performance.now() - ageMs);
     },
+    resultTap: null,
     lastHands: [],
   };
   if (__DEVTOOLS__) {

@@ -13,6 +13,7 @@ import { renderStrokes } from '../render/full-render';
 import { startTracker } from '../tracking/tracker-client';
 import { el } from '../ui/dom';
 import { parseReplay } from './replay-format';
+import { Recorder } from './recorder';
 
 export interface DevHandle extends AppHandle {
   /** Plays a replay record through the live input path at `speed` (Infinity = no waiting). */
@@ -28,6 +29,7 @@ export interface DevHandle extends AppHandle {
   readonly compareWithReference: () => { ink: number; mismatched: number; maxDiff: number; pixels: number };
   /** Adds `strokes` handwriting-like strokes of `points` samples each (benchmark workload). */
   readonly loadSyntheticBoard: (strokes: number, points: number, seed: number) => void;
+  readonly recorder: Recorder;
 }
 
 declare global {
@@ -55,7 +57,11 @@ function fmt(n: number): string {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function installDevtools(app: AppHandle): void {
+  const params = new URLSearchParams(location.search);
+  const maxRecordMs = Number(params.get('recordMaxMs') ?? '0');
+  const recorder = new Recorder(app, maxRecordMs > 0 ? { maxDurationMs: maxRecordMs, maxFrames: 7200 } : undefined);
   const handle: DevHandle = Object.assign(app, {
+    recorder,
     replay: async (json: unknown, speed: number): Promise<void> => {
       const parsed = parseReplay(json);
       if (!parsed.ok) throw new Error(`Invalid replay: ${parsed.errors.join('; ')}`);
@@ -179,8 +185,8 @@ export function installDevtools(app: AppHandle): void {
       }),
   });
   window.__air = handle;
+  if (params.get('recorder') !== '0') document.body.append(recorder.element);
 
-  const params = new URLSearchParams(location.search);
   if (params.get('hud') === '0') return;
   const hud = el('div', { class: 'hud', 'aria-hidden': 'true' });
   document.body.append(hud);
